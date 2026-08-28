@@ -1,39 +1,157 @@
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { Alert, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Linking, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+
 import { useAuth } from '@/auth';
 import { Screen } from '@/components/Screen';
 import { roleLabels } from '@/modules';
-import { colors, radius } from '@/theme';
+import { colors, radius, shadow } from '@/theme';
 
-const rows: { icon: keyof typeof Ionicons.glyphMap; label: string; note?: string }[] = [
-  { icon: 'business-outline', label: 'Workspace access', note: 'City Complex' }, { icon: 'key-outline', label: 'Roles and permissions' },
-  { icon: 'notifications-outline', label: 'Notifications' }, { icon: 'shield-checkmark-outline', label: 'Login and security' },
-  { icon: 'document-text-outline', label: 'Privacy policy' }, { icon: 'trash-bin-outline', label: 'Data & account requests' },
-  { icon: 'help-circle-outline', label: 'Help and support' },
+const menuRows: { icon: keyof typeof Ionicons.glyphMap; label: string }[] = [
+  { icon: 'notifications-outline', label: 'Notifications' },
+  { icon: 'shield-checkmark-outline', label: 'Login & security' },
+  { icon: 'document-text-outline', label: 'Privacy policy' },
+  { icon: 'trash-bin-outline', label: 'Data & account requests' },
+  { icon: 'help-circle-outline', label: 'Help & support' },
 ];
 
 export default function ProfileScreen() {
   const { session, signOut, switchRole } = useAuth();
   const router = useRouter();
+  const { width } = useWindowDimensions();
+  const currentRole = session ? roleLabels[session.user.role] : '';
+  const otherRoles = session?.availableRoles.filter((item) => item.role !== session.user.role || item.orgId !== session.orgId) ?? [];
+  const firstOtherRole = otherRoles[0];
+  const isCompact = width < 390;
+
   const openRow = (label: string) => {
     if (label === 'Notifications') router.push('/notifications');
-    else if (label === 'Workspace access' || label === 'Roles and permissions') router.push('/modules');
     else if (label === 'Privacy policy') {
       const url = process.env.EXPO_PUBLIC_PRIVACY_POLICY_URL;
       if (url) void Linking.openURL(url); else Alert.alert('Privacy policy', 'Add the published privacy-policy URL before store submission.');
     } else if (label === 'Data & account requests') {
       const email = process.env.EXPO_PUBLIC_SUPPORT_EMAIL;
       if (email) void Linking.openURL(`mailto:${email}?subject=HostIn%20data%20or%20account%20request`); else Alert.alert(label, 'Contact your property administrator to request data access, correction, or account deletion.');
-    } else if (label === 'Help and support') {
+    } else if (label === 'Help & support') {
       const email = process.env.EXPO_PUBLIC_SUPPORT_EMAIL;
       if (email) void Linking.openURL(`mailto:${email}?subject=HostIn%20support`); else Alert.alert(label, 'Contact your property administrator or HostIn support for assistance.');
     } else Alert.alert(label, 'Your token is encrypted in Keychain or Keystore on this device.');
   };
-  const otherRoles = session?.availableRoles.filter((item) => item.role !== session.user.role || item.orgId !== session.orgId) ?? [];
-  return <Screen><Text style={styles.eyebrow}>ACCOUNT</Text><Text style={styles.title}>Your HostIn</Text><View style={styles.profile}><View style={styles.avatar}><Text style={styles.avatarText}>{session?.user.name.slice(0, 1)}</Text></View><View style={styles.profileCopy}><Text style={styles.name}>{session?.user.name}</Text><Text style={styles.email}>{session?.user.email}</Text><View style={styles.role}><Text style={styles.roleText}>{session ? roleLabels[session.user.role].toUpperCase() : ''}</Text></View></View></View>{otherRoles.length > 0 && <><Text style={styles.sectionLabel}>SWITCH WORKSPACE OR ROLE</Text><View style={styles.switcher}>{otherRoles.map((item) => <Pressable key={`${item.orgId}:${item.role}`} onPress={() => void switchRole(item)} style={styles.switchRow}><View style={styles.icon}><Ionicons color={colors.forest} name="swap-horizontal-outline" size={19} /></View><View style={styles.switchCopy}><Text style={styles.label}>{roleLabels[item.role]}</Text><Text style={styles.note}>{item.workspace}</Text></View><Ionicons color={colors.muted} name="chevron-forward" size={17} /></Pressable>)}</View></>}<View style={styles.menu}>{rows.map((row, index) => <Pressable key={row.label} onPress={() => openRow(row.label)} style={[styles.row, index < rows.length - 1 && styles.rowBorder]}><View style={styles.icon}><Ionicons color={colors.forest} name={row.icon} size={19} /></View><Text style={styles.label}>{row.label}</Text>{row.label === 'Workspace access' ? <Text style={styles.note}>{session?.workspace}</Text> : row.note ? <Text style={styles.note}>{row.note}</Text> : null}<Ionicons color={colors.muted} name="chevron-forward" size={17} /></Pressable>)}</View><Pressable onPress={() => void signOut()} style={styles.logout}><Ionicons color={colors.danger} name="log-out-outline" size={19} /><Text style={styles.logoutText}>Sign out</Text></Pressable><Text style={styles.version}>HostIn Mobile · Reference build</Text></Screen>;
+
+  const switchWorkspace = () => {
+    if (firstOtherRole) void switchRole(firstOtherRole);
+    else Alert.alert('Workspace', 'City Complex is your active workspace.');
+  };
+
+  const switchCurrentRole = () => {
+    if (firstOtherRole) void switchRole(firstOtherRole);
+    else Alert.alert('Owner role', 'You have owner permissions for this workspace.');
+  };
+
+  return <Screen contentStyle={[styles.content, isCompact && styles.contentCompact]}>
+    <View style={styles.header}>
+      <View>
+        <Text style={[styles.eyebrow, isCompact && styles.eyebrowCompact]}>ACCOUNT</Text>
+        <Text style={[styles.title, isCompact && styles.titleCompact]}>You</Text>
+      </View>
+      <Pressable accessibilityLabel="Open notifications" onPress={() => router.push('/notifications')} style={styles.bell}>
+        <Ionicons color={colors.ink} name="notifications-outline" size={20} />
+        <View style={styles.dot} />
+      </Pressable>
+    </View>
+
+    <LinearGradient colors={['#007D73', '#006457', '#004A47']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.profileCard, isCompact && styles.profileCardCompact, shadow]}>
+      <View style={styles.profileGlow} />
+      <View style={[styles.avatar, isCompact && styles.avatarCompact]}><Text style={[styles.avatarText, isCompact && styles.avatarTextCompact]}>{session?.user.name.slice(0, 1) ?? 'O'}</Text></View>
+      <View style={styles.profileCopy}>
+        <Text style={styles.name}>{session?.user.name ?? 'Owner'}</Text>
+        <Text numberOfLines={1} style={styles.email}>{session?.user.email ?? 'owner@city-complex.hostin.local'}</Text>
+        <View style={styles.rolePill}><Text style={styles.rolePillText}>{currentRole.toUpperCase()}</Text></View>
+      </View>
+      <View style={[styles.buildingGhost, isCompact && styles.buildingGhostCompact]}><Ionicons color="rgba(255,255,255,0.24)" name="business-outline" size={72} /></View>
+    </LinearGradient>
+
+    <View style={[styles.accessCard, isCompact && styles.accessCardCompact, shadow]}>
+      <View style={styles.accessIcon}><Ionicons color={colors.forest} name="business-outline" size={22} /></View>
+      <View style={styles.accessCopy}><Text style={styles.accessTitle}>Workspace</Text><Text style={styles.accessValue}>{session?.workspace ?? 'city-complex'}</Text></View>
+      <Pressable onPress={switchWorkspace} style={[styles.outlineButton, isCompact && styles.outlineButtonCompact]}><Text style={styles.outlineText}>Switch workspace</Text><Ionicons color={colors.forest} name="chevron-forward" size={20} /></Pressable>
+    </View>
+
+    <View style={[styles.accessCard, isCompact && styles.accessCardCompact, shadow]}>
+      <View style={styles.accessIcon}><Ionicons color={colors.forest} name="shield-checkmark-outline" size={22} /></View>
+      <View style={styles.accessCopy}><Text style={styles.accessTitle}>Current role</Text><Text style={styles.roleValue}>{currentRole}</Text></View>
+      <Pressable onPress={switchCurrentRole} style={[styles.outlineButton, isCompact && styles.outlineButtonCompact]}><Text style={styles.outlineText}>Switch role</Text><Ionicons color={colors.forest} name="chevron-forward" size={20} /></Pressable>
+    </View>
+
+    <View style={[styles.menu, shadow]}>
+      {menuRows.map((row, index) => <Pressable key={row.label} onPress={() => openRow(row.label)} style={[styles.row, index < menuRows.length - 1 && styles.rowBorder]}>
+        <View style={styles.menuIcon}><Ionicons color={colors.forest} name={row.icon} size={20} /></View>
+        <Text style={[styles.rowLabel, isCompact && styles.rowLabelCompact]}>{row.label}</Text>
+        <Ionicons color="#667085" name="chevron-forward" size={19} />
+      </Pressable>)}
+    </View>
+
+    <Pressable onPress={() => Alert.alert('Trusted workspace access', 'Your data and access are protected with enterprise-grade security.')} style={[styles.trustCard, isCompact && styles.trustCardCompact, shadow]}>
+      <View style={styles.trustIcon}><Ionicons color={colors.forest} name="shield-checkmark-outline" size={26} /></View>
+      <View style={styles.trustCopy}><Text style={styles.trustTitle}>Trusted workspace access</Text><Text style={styles.trustText}>Your data and access are protected with enterprise-grade security.</Text></View>
+      {!isCompact && <View style={styles.trustBadge}><Ionicons color={colors.surface} name="checkmark" size={26} /></View>}
+    </Pressable>
+
+    <Pressable onPress={() => Alert.alert('Sign out of HostIn?', "You'll need to sign in again to manage City Complex.", [{ text: 'Cancel', style: 'cancel' }, { text: 'Sign out', style: 'destructive', onPress: () => void signOut() }])} style={styles.logout}>
+      <Ionicons color={colors.danger} name="log-out-outline" size={21} />
+      <Text style={styles.logoutText}>Sign out</Text>
+    </Pressable>
+  </Screen>;
 }
 
 const styles = StyleSheet.create({
-  eyebrow: { color: colors.coral, fontSize: 10, fontWeight: '800', letterSpacing: 1.5, marginTop: 20 }, title: { color: colors.ink, fontSize: 30, fontWeight: '800', letterSpacing: -1, marginTop: 7 }, profile: { alignItems: 'center', backgroundColor: colors.forest, borderRadius: radius.lg, flexDirection: 'row', marginTop: 22, padding: 18 }, avatar: { alignItems: 'center', backgroundColor: colors.coral, borderRadius: 19, height: 58, justifyContent: 'center', width: 58 }, avatarText: { color: colors.surface, fontSize: 22, fontWeight: '800' }, profileCopy: { flex: 1, marginLeft: 13 }, name: { color: colors.surface, fontSize: 17, fontWeight: '800' }, email: { color: '#B8C9C2', fontSize: 11, marginTop: 4 }, role: { alignSelf: 'flex-start', backgroundColor: '#315A4C', borderRadius: radius.pill, marginTop: 8, paddingHorizontal: 8, paddingVertical: 4 }, roleText: { color: '#D9ECE4', fontSize: 8, fontWeight: '800', letterSpacing: 1 }, sectionLabel: { color: colors.muted, fontSize: 9, fontWeight: '900', letterSpacing: 1.2, marginBottom: -8, marginTop: 20 }, switcher: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: radius.md, borderWidth: 1, marginTop: 18, paddingHorizontal: 15 }, switchRow: { alignItems: 'center', flexDirection: 'row', gap: 12, paddingVertical: 13 }, switchCopy: { flex: 1 }, menu: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: radius.md, borderWidth: 1, marginTop: 18, paddingHorizontal: 15 }, row: { alignItems: 'center', flexDirection: 'row', gap: 12, paddingVertical: 15 }, rowBorder: { borderBottomColor: colors.border, borderBottomWidth: 1 }, icon: { alignItems: 'center', backgroundColor: colors.forestSoft, borderRadius: 10, height: 36, justifyContent: 'center', width: 36 }, label: { color: colors.ink, flex: 1, fontSize: 13, fontWeight: '700' }, note: { color: colors.muted, fontSize: 10 }, logout: { alignItems: 'center', backgroundColor: '#FFF4F1', borderColor: '#F4DBD5', borderRadius: radius.sm, borderWidth: 1, flexDirection: 'row', gap: 8, justifyContent: 'center', marginTop: 18, padding: 15 }, logoutText: { color: colors.danger, fontSize: 13, fontWeight: '800' }, version: { color: colors.muted, fontSize: 10, marginTop: 20, textAlign: 'center' },
+  content: { paddingBottom: 104, paddingHorizontal: 18 },
+  contentCompact: { paddingHorizontal: 14 },
+  header: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', paddingTop: 18 },
+  eyebrow: { color: colors.coral, fontSize: 10, fontWeight: '900', letterSpacing: 2.8 },
+  eyebrowCompact: { fontSize: 9, letterSpacing: 2 },
+  title: { color: colors.ink, fontSize: 34, fontWeight: '900', letterSpacing: 0, marginTop: 10 },
+  titleCompact: { fontSize: 30 },
+  bell: { alignItems: 'center', backgroundColor: colors.surface, borderColor: '#EEF1F4', borderRadius: 18, borderWidth: 1, height: 44, justifyContent: 'center', width: 44, ...shadow },
+  dot: { backgroundColor: colors.forest, borderColor: colors.surface, borderRadius: 5, borderWidth: 2, height: 9, position: 'absolute', right: 8, top: 7, width: 9 },
+  profileCard: { alignItems: 'center', borderRadius: 16, flexDirection: 'row', gap: 17, marginTop: 24, minHeight: 118, overflow: 'hidden', padding: 20 },
+  profileCardCompact: { gap: 13, marginTop: 20, minHeight: 108, padding: 15 },
+  profileGlow: { backgroundColor: 'rgba(255,255,255,0.14)', borderRadius: 78, height: 124, position: 'absolute', right: -18, top: 10, width: 124 },
+  avatar: { alignItems: 'center', backgroundColor: colors.coral, borderRadius: 20, height: 68, justifyContent: 'center', width: 68 },
+  avatarCompact: { borderRadius: 17, height: 56, width: 56 },
+  avatarText: { color: colors.surface, fontSize: 30, fontWeight: '900' },
+  avatarTextCompact: { fontSize: 24 },
+  profileCopy: { flex: 1, minWidth: 0 },
+  name: { color: colors.surface, fontSize: 20, fontWeight: '900' },
+  email: { color: '#B9D6D2', fontSize: 12, fontWeight: '500', marginTop: 7 },
+  rolePill: { alignSelf: 'flex-start', backgroundColor: 'rgba(255,255,255,0.16)', borderRadius: radius.pill, marginTop: 9, paddingHorizontal: 10, paddingVertical: 5 },
+  rolePillText: { color: colors.surface, fontSize: 9, fontWeight: '900', letterSpacing: 2 },
+  buildingGhost: { bottom: 12, position: 'absolute', right: 18 },
+  buildingGhostCompact: { opacity: 0.45, right: -12 },
+  accessCard: { alignItems: 'center', backgroundColor: colors.surface, borderColor: '#DCEBE7', borderRadius: 15, borderWidth: 1, flexDirection: 'row', gap: 12, minHeight: 78, marginTop: 14, padding: 14 },
+  accessCardCompact: { alignItems: 'flex-start', flexWrap: 'wrap', gap: 10, padding: 13 },
+  accessIcon: { alignItems: 'center', backgroundColor: '#F0FFFC', borderColor: '#DCEBE7', borderRadius: 12, borderWidth: 1, height: 44, justifyContent: 'center', width: 44 },
+  accessCopy: { flex: 1, minWidth: 0 },
+  accessTitle: { color: colors.ink, fontSize: 15, fontWeight: '900' },
+  accessValue: { color: colors.muted, fontSize: 13, fontWeight: '500', marginTop: 4 },
+  roleValue: { color: colors.forest, fontSize: 13, fontWeight: '900', marginTop: 4 },
+  outlineButton: { alignItems: 'center', borderColor: '#DCEBE7', borderRadius: 11, borderWidth: 1, flexDirection: 'row', gap: 5, minHeight: 36, paddingHorizontal: 11 },
+  outlineButtonCompact: { marginLeft: 56 },
+  outlineText: { color: colors.forest, fontSize: 11, fontWeight: '900' },
+  menu: { backgroundColor: colors.surface, borderColor: '#EEF1F4', borderRadius: 16, borderWidth: 1, marginTop: 18, paddingHorizontal: 16, paddingVertical: 6 },
+  row: { alignItems: 'center', flexDirection: 'row', gap: 14, minHeight: 56 },
+  rowBorder: { borderBottomColor: '#EBEEF2', borderBottomWidth: 1 },
+  menuIcon: { alignItems: 'center', backgroundColor: '#F0FFFC', borderColor: '#DCEBE7', borderRadius: 10, borderWidth: 1, height: 38, justifyContent: 'center', width: 38 },
+  rowLabel: { color: colors.ink, flex: 1, fontSize: 15, fontWeight: '900' },
+  rowLabelCompact: { fontSize: 14 },
+  trustCard: { alignItems: 'center', backgroundColor: '#F4FFFC', borderColor: '#CDEFE8', borderRadius: 15, borderWidth: 1, flexDirection: 'row', gap: 12, marginTop: 18, minHeight: 84, overflow: 'hidden', padding: 14 },
+  trustCardCompact: { alignItems: 'flex-start', padding: 13 },
+  trustIcon: { alignItems: 'center', backgroundColor: colors.forestSoft, borderRadius: 24, height: 46, justifyContent: 'center', width: 46 },
+  trustCopy: { flex: 1 },
+  trustTitle: { color: colors.forest, fontSize: 14, fontWeight: '900' },
+  trustText: { color: colors.muted, fontSize: 11, fontWeight: '500', lineHeight: 16, marginTop: 4 },
+  trustBadge: { alignItems: 'center', backgroundColor: colors.forest, borderRadius: 17, height: 54, justifyContent: 'center', marginRight: -4, width: 54 },
+  logout: { alignItems: 'center', backgroundColor: '#FFF7F5', borderColor: '#F9CFC8', borderRadius: 15, borderWidth: 1, flexDirection: 'row', gap: 11, justifyContent: 'center', marginTop: 16, minHeight: 56 },
+  logoutText: { color: colors.danger, fontSize: 15, fontWeight: '900' },
 });

@@ -1,9 +1,9 @@
 import { PropsWithChildren, ReactElement } from 'react';
-import { RefreshControlProps, ScrollView, StyleSheet, ViewStyle } from 'react-native';
+import { RefreshControlProps, ScrollView, StyleSheet, StyleProp, ViewStyle } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '@/theme';
 
-export function Screen({ children, contentStyle, refreshControl }: PropsWithChildren<{ contentStyle?: ViewStyle; refreshControl?: ReactElement<RefreshControlProps> }>) {
+export function Screen({ children, contentStyle, refreshControl }: PropsWithChildren<{ contentStyle?: StyleProp<ViewStyle>; refreshControl?: ReactElement<RefreshControlProps> }>) {
   return <SafeAreaView edges={['top']} style={styles.safe}>
     <ScrollView contentContainerStyle={[styles.content, contentStyle]} keyboardShouldPersistTaps="handled" refreshControl={refreshControl} showsVerticalScrollIndicator={false}>{children}</ScrollView>
   </SafeAreaView>;
