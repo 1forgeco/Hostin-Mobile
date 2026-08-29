@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useMemo, useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { LogoMark } from '@/components/Logo';
 import { colors, radius, shadow } from '@/theme';
 import type { AvailableRole, Session } from '@/types';
 
@@ -21,12 +22,14 @@ export function OwnerPropertySwitcher({ onSwitch, session }: { onSwitch: (role: 
 
   return <>
     <View style={styles.kickerRow}>
-      <Pressable accessibilityRole="button" onPress={() => setOpen(true)} style={({ pressed }) => [styles.propertyButton, pressed && styles.pressed]}>
-        <Text numberOfLines={1} style={styles.propertyText}>{session.workspace.toUpperCase()}</Text>
-        <Ionicons color={colors.forest} name="chevron-down" size={13} />
-      </Pressable>
-      <Text style={styles.separator}>·</Text>
-      <Text style={styles.roleText}>OWNER</Text>
+      <LogoMark size={38} />
+      <View style={styles.propertyStack}>
+        <Pressable accessibilityRole="button" onPress={() => setOpen(true)} style={({ pressed }) => [styles.propertyButton, pressed && styles.pressed]}>
+          <Text numberOfLines={1} style={styles.propertyText}>{session.workspace}</Text>
+          <Ionicons color={colors.ink} name="chevron-down" size={14} />
+        </Pressable>
+        <View style={styles.rolePill}><Ionicons color="#6D5CF6" name="business" size={10} /><Text style={styles.roleText}>Owner</Text></View>
+      </View>
     </View>
     <Modal animationType="slide" transparent visible={open} onRequestClose={() => setOpen(false)}>
       <Pressable style={styles.backdrop} onPress={() => setOpen(false)}>
@@ -49,11 +52,12 @@ export function OwnerPropertySwitcher({ onSwitch, session }: { onSwitch: (role: 
 }
 
 const styles = StyleSheet.create({
-  kickerRow: { alignItems: 'center', flexDirection: 'row', flexShrink: 1, gap: 7, minWidth: 0 },
-  propertyButton: { alignItems: 'center', flexDirection: 'row', flexShrink: 1, gap: 3, minWidth: 0 },
-  propertyText: { color: colors.forest, flexShrink: 1, fontSize: 10, fontWeight: '900', letterSpacing: 1.7 },
-  separator: { color: colors.forest, fontSize: 10, fontWeight: '900' },
-  roleText: { color: colors.forest, fontSize: 10, fontWeight: '900', letterSpacing: 1.7 },
+  kickerRow: { alignItems: 'center', flexDirection: 'row', flexShrink: 1, gap: 10, minWidth: 0 },
+  propertyStack: { flex: 1, minWidth: 0 },
+  propertyButton: { alignItems: 'center', flexDirection: 'row', flexShrink: 1, gap: 4, minWidth: 0 },
+  propertyText: { color: colors.ink, flexShrink: 1, fontSize: 16, fontWeight: '900', letterSpacing: 0 },
+  rolePill: { alignItems: 'center', alignSelf: 'flex-start', backgroundColor: '#F0ECFF', borderRadius: radius.pill, flexDirection: 'row', gap: 4, marginTop: 5, paddingHorizontal: 8, paddingVertical: 3 },
+  roleText: { color: '#6D5CF6', fontSize: 10, fontWeight: '900' },
   backdrop: { backgroundColor: 'rgba(16, 24, 40, 0.25)', flex: 1, justifyContent: 'flex-end' },
   sheet: { backgroundColor: colors.surface, borderTopLeftRadius: 22, borderTopRightRadius: 22, paddingBottom: 28, paddingHorizontal: 18, paddingTop: 10 },
   handle: { alignSelf: 'center', backgroundColor: '#D0D5DD', borderRadius: radius.pill, height: 4, marginBottom: 16, width: 42 },
