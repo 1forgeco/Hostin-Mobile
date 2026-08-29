@@ -21,6 +21,8 @@ Copy `.env.example` to `.env` and set `EXPO_PUBLIC_API_URL` to the existing back
 
 The app never connects directly to the database. Both the web and mobile clients should use the same backend API and production database.
 
+Preview mode is intentionally disabled for EAS `preview` and `production` builds with `EXPO_PUBLIC_ALLOW_PREVIEW=false`. Set `EXPO_PUBLIC_API_URL` in EAS environment variables before building those profiles, otherwise login fails fast instead of showing demo data.
+
 ## Build for Android and iOS
 
 Follow the tested release sequence and owner-input checklist in [docs/STORE_LAUNCH.md](docs/STORE_LAUNCH.md). Store submission additionally requires the organization’s Expo, Google Play, and Apple Developer credentials; those are intentionally not stored in this repository.

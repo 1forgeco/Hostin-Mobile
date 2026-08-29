@@ -1,7 +1,11 @@
 import type { OrgRole, Session } from '@/types';
 
-export const API_URL = process.env.EXPO_PUBLIC_API_URL?.replace(/\/$/, '');
-export const isPreviewMode = !API_URL;
+export const API_URL = process.env.EXPO_PUBLIC_API_URL?.trim().replace(/\/$/, '');
+export const allowPreviewMode = process.env.EXPO_PUBLIC_ALLOW_PREVIEW !== 'false';
+export const isPreviewMode = !API_URL && allowPreviewMode;
+export const backendConfigError = !API_URL && !allowPreviewMode
+  ? 'Production backend is not configured. Set EXPO_PUBLIC_API_URL to the Hostin API root ending in /api.'
+  : '';
 
 class ApiError extends Error {
   status: number;
@@ -36,7 +40,7 @@ export const demoAccounts: { role: OrgRole; label: string; email: string; detail
 ];
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  if (!API_URL) throw new Error('The Hostin API URL has not been configured.');
+  if (!API_URL) throw new Error(backendConfigError || 'The Hostin API URL has not been configured.');
   const response = await fetch(`${API_URL}${path}`, {
     ...init,
     credentials: 'include',
@@ -51,7 +55,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export async function authenticatedRequest<T>(session: Session, path: string, init?: RequestInit): Promise<T> {
-  if (!API_URL) throw new Error('Preview mode does not call the backend.');
+  if (!API_URL) throw new Error(backendConfigError || 'Preview mode does not call the backend.');
   const execute = () => request<T>(path, { ...init, headers: { Authorization: `Bearer ${session.accessToken}`, 'x-org-id': session.orgId, ...init?.headers } });
   try { return await execute(); }
   catch (cause) {
@@ -69,6 +73,7 @@ export async function authenticatedRequest<T>(session: Session, path: string, in
 export const authApi = {
   async login(email: string, password: string): Promise<Session> {
     if (!API_URL) {
+      if (!isPreviewMode) throw new Error(backendConfigError || 'The Hostin API URL has not been configured.');
       await new Promise((resolve) => setTimeout(resolve, 650));
       if (!email.trim() || !password.trim()) throw new Error('Enter your email and password.');
       const account = demoAccounts.find((item) => item.email === email) ?? demoAccounts[0];

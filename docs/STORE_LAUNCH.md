@@ -22,7 +22,7 @@ This repository is prepared for EAS development, internal-preview, and productio
    npx eas-cli@latest init
    ```
 
-4. Add production public environment variables with EAS environment management. Do not commit secrets or store service-account files.
+4. Add production public environment variables with EAS environment management. At minimum, set `EXPO_PUBLIC_API_URL` to the HTTPS API root ending in `/api`; preview mode is disabled for `preview` and `production` builds. Do not commit secrets or store service-account files.
 5. Build a development client and test all seven roles on physical Android and iOS devices. Push notifications require a development build rather than Expo Go on Android.
 6. Build internal releases:
 
