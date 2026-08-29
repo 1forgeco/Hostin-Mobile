@@ -3,9 +3,10 @@ import { RefreshControlProps, ScrollView, StyleSheet, StyleProp, ViewStyle } fro
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '@/theme';
 
-export function Screen({ children, contentStyle, refreshControl }: PropsWithChildren<{ contentStyle?: StyleProp<ViewStyle>; refreshControl?: ReactElement<RefreshControlProps> }>) {
+export function Screen({ children, contentStyle, floating, refreshControl }: PropsWithChildren<{ contentStyle?: StyleProp<ViewStyle>; floating?: ReactElement; refreshControl?: ReactElement<RefreshControlProps> }>) {
   return <SafeAreaView edges={['top']} style={styles.safe}>
     <ScrollView contentContainerStyle={[styles.content, contentStyle]} keyboardShouldPersistTaps="handled" refreshControl={refreshControl} showsVerticalScrollIndicator={false}>{children}</ScrollView>
+    {floating}
   </SafeAreaView>;
 }
 

@@ -1,9 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 
 import { useAuth } from '@/auth';
-import { OwnerPropertySwitcher } from '@/components/OwnerPropertySwitcher';
 import { Screen } from '@/components/Screen';
 import { modulesForRole, roleLabels } from '@/modules';
 import { colors, radius, shadow } from '@/theme';
@@ -23,10 +23,20 @@ export default function ModulesScreen() {
   const { session } = useAuth();
   const router = useRouter();
   const { width } = useWindowDimensions();
+  const [activeFilter, setActiveFilter] = useState('All');
+  const [query, setQuery] = useState('');
   const role = session?.user.role ?? 'tenant';
   const allowed = modulesForRole(role);
-  const pinned = allowed.filter((module) => pinnedIds.includes(module.id)).slice(0, 4);
-  const allModules = allowed.filter((module) => !pinnedIds.includes(module.id));
+  const normalizedQuery = query.trim().toLowerCase();
+  const filtered = useMemo(() => allowed.filter((module) => {
+    const category = categories[module.id] ?? 'Workspace';
+    const filterMatch = activeFilter === 'All' || category === activeFilter;
+    const queryMatch = !normalizedQuery || `${module.title} ${module.description} ${category}`.toLowerCase().includes(normalizedQuery);
+    return filterMatch && queryMatch;
+  }), [activeFilter, allowed, normalizedQuery]);
+  const pinned = filtered.filter((module) => pinnedIds.includes(module.id)).slice(0, 4);
+  const allModules = filtered.filter((module) => !pinnedIds.includes(module.id));
+  const showPinned = pinned.length > 0;
   const isCompact = width < 390;
   const isPhone = width < 520;
   const isTablet = width >= 760;
@@ -35,7 +45,7 @@ export default function ModulesScreen() {
   return <Screen contentStyle={[styles.content, isCompact && styles.contentCompact]}>
     <View style={styles.header}>
       <View style={styles.headerCopy}>
-        {role === 'owner' ? <OwnerPropertySwitcher workspace={session?.workspace ?? 'City Complex'} /> : <Text style={[styles.eyebrow, isCompact && styles.eyebrowCompact]}>{(session?.workspace ?? 'City Complex').toUpperCase()} · {roleLabels[role].toUpperCase()}</Text>}
+        <Text style={[styles.eyebrow, isCompact && styles.eyebrowCompact]}>{(session?.workspace ?? 'City Complex').toUpperCase()} · {roleLabels[role].toUpperCase()}</Text>
         <Text style={[styles.title, isCompact && styles.titleCompact]}>Modules</Text>
         <Text style={[styles.subtitle, isCompact && styles.subtitleCompact]}>Everything enabled for your workspace.</Text>
       </View>
@@ -47,28 +57,30 @@ export default function ModulesScreen() {
 
     <View style={styles.searchBar}>
       <Ionicons color="#98A2B3" name="search-outline" size={18} />
-      <TextInput editable={false} placeholder="Search modules..." placeholderTextColor="#8F98AA" style={styles.searchInput} />
+      <TextInput placeholder="Search modules..." placeholderTextColor="#8F98AA" style={styles.searchInput} value={query} onChangeText={setQuery} />
       <Ionicons color="#667085" name="options-outline" size={19} />
     </View>
 
     <ScrollView horizontal contentContainerStyle={styles.filters} showsHorizontalScrollIndicator={false}>
-      {filters.map((filter, index) => <Pressable key={filter} style={[styles.filter, index === 0 && styles.filterActive]}>
-        <Text style={[styles.filterText, index === 0 && styles.filterTextActive]}>{filter}</Text>
+      {filters.map((filter) => <Pressable key={filter} onPress={() => setActiveFilter(filter)} style={[styles.filter, activeFilter === filter && styles.filterActive]}>
+        <Text style={[styles.filterText, activeFilter === filter && styles.filterTextActive]}>{filter}</Text>
       </Pressable>)}
     </ScrollView>
 
-    <View style={styles.sectionHeader}>
-      <Text style={styles.sectionTitle}>Pinned</Text>
-      <Text style={styles.link}>Edit</Text>
-    </View>
-    <ScrollView horizontal contentContainerStyle={styles.pinnedRow} showsHorizontalScrollIndicator={false}>
-      {pinned.map((module) => <Pressable key={module.id} onPress={() => router.push({ pathname: '/module/[id]', params: { id: module.id } })} style={({ pressed }) => [styles.pinnedCard, shadow, pressed && styles.pressed]}>
-        <Ionicons color={colors.forest} name="pin" size={14} style={styles.pin} />
-        <View style={styles.pinnedIcon}><Ionicons color={colors.forest} name={module.icon as keyof typeof Ionicons.glyphMap} size={25} /></View>
-        <Text numberOfLines={2} style={styles.pinnedTitle}>{module.title}</Text>
-        <Text style={styles.pinnedCategory}>{categories[module.id] ?? 'Workspace'}</Text>
-      </Pressable>)}
-    </ScrollView>
+    {showPinned && <>
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>Pinned</Text>
+        <Text style={styles.link}>Edit</Text>
+      </View>
+      <ScrollView horizontal contentContainerStyle={styles.pinnedRow} showsHorizontalScrollIndicator={false}>
+        {pinned.map((module) => <Pressable key={module.id} onPress={() => router.push({ pathname: '/module/[id]', params: { id: module.id } })} style={({ pressed }) => [styles.pinnedCard, shadow, pressed && styles.pressed]}>
+          <Ionicons color={colors.forest} name="pin" size={14} style={styles.pin} />
+          <View style={styles.pinnedIcon}><Ionicons color={colors.forest} name={module.icon as keyof typeof Ionicons.glyphMap} size={25} /></View>
+          <Text numberOfLines={2} style={styles.pinnedTitle}>{module.title}</Text>
+          <Text style={styles.pinnedCategory}>{categories[module.id] ?? 'Workspace'}</Text>
+        </Pressable>)}
+      </ScrollView>
+    </>}
 
     <View style={styles.sectionHeader}>
       <Text style={styles.sectionTitle}>All Modules</Text>
@@ -82,6 +94,7 @@ export default function ModulesScreen() {
           <Text style={styles.cardCategory}>{categories[module.id] ?? 'Workspace'}</Text>
         </View>
       </Pressable>)}
+      {!allModules.length && !pinned.length && <Text style={styles.empty}>No modules match your search.</Text>}
     </View>
   </Screen>;
 }
@@ -122,5 +135,6 @@ const styles = StyleSheet.create({
   cardCopy: { flex: 1, minWidth: 0 },
   cardTitle: { color: colors.ink, fontSize: 11, fontWeight: '900' },
   cardCategory: { color: colors.muted, fontSize: 10, fontWeight: '600', marginTop: 3 },
+  empty: { color: colors.muted, fontSize: 13, fontWeight: '700', paddingVertical: 26, textAlign: 'center', width: '100%' },
   pressed: { opacity: 0.74 },
 });

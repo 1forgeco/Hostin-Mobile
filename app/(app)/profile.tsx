@@ -9,7 +9,6 @@ import { roleLabels } from '@/modules';
 import { colors, radius, shadow } from '@/theme';
 
 const menuRows: { icon: keyof typeof Ionicons.glyphMap; label: string }[] = [
-  { icon: 'notifications-outline', label: 'Notifications' },
   { icon: 'shield-checkmark-outline', label: 'Login & security' },
   { icon: 'document-text-outline', label: 'Privacy policy' },
   { icon: 'trash-bin-outline', label: 'Data & account requests' },
@@ -17,17 +16,14 @@ const menuRows: { icon: keyof typeof Ionicons.glyphMap; label: string }[] = [
 ];
 
 export default function ProfileScreen() {
-  const { session, signOut, switchRole } = useAuth();
+  const { session, signOut } = useAuth();
   const router = useRouter();
   const { width } = useWindowDimensions();
   const currentRole = session ? roleLabels[session.user.role] : '';
-  const otherRoles = session?.availableRoles.filter((item) => item.role !== session.user.role || item.orgId !== session.orgId) ?? [];
-  const firstOtherRole = otherRoles[0];
   const isCompact = width < 390;
 
   const openRow = (label: string) => {
-    if (label === 'Notifications') router.push('/notifications');
-    else if (label === 'Privacy policy') {
+    if (label === 'Privacy policy') {
       const url = process.env.EXPO_PUBLIC_PRIVACY_POLICY_URL;
       if (url) void Linking.openURL(url); else Alert.alert('Privacy policy', 'Add the published privacy-policy URL before store submission.');
     } else if (label === 'Data & account requests') {
@@ -37,16 +33,6 @@ export default function ProfileScreen() {
       const email = process.env.EXPO_PUBLIC_SUPPORT_EMAIL;
       if (email) void Linking.openURL(`mailto:${email}?subject=HostIn%20support`); else Alert.alert(label, 'Contact your property administrator or HostIn support for assistance.');
     } else Alert.alert(label, 'Your token is encrypted in Keychain or Keystore on this device.');
-  };
-
-  const switchWorkspace = () => {
-    if (firstOtherRole) void switchRole(firstOtherRole);
-    else Alert.alert('Workspace', 'City Complex is your active workspace.');
-  };
-
-  const switchCurrentRole = () => {
-    if (firstOtherRole) void switchRole(firstOtherRole);
-    else Alert.alert('Owner role', 'You have owner permissions for this workspace.');
   };
 
   return <Screen contentStyle={[styles.content, isCompact && styles.contentCompact]}>
@@ -72,18 +58,6 @@ export default function ProfileScreen() {
       <View style={[styles.buildingGhost, isCompact && styles.buildingGhostCompact]}><Ionicons color="rgba(255,255,255,0.24)" name="business-outline" size={72} /></View>
     </LinearGradient>
 
-    <View style={[styles.accessCard, isCompact && styles.accessCardCompact, shadow]}>
-      <View style={styles.accessIcon}><Ionicons color={colors.forest} name="business-outline" size={22} /></View>
-      <View style={styles.accessCopy}><Text style={styles.accessTitle}>Workspace</Text><Text style={styles.accessValue}>{session?.workspace ?? 'city-complex'}</Text></View>
-      <Pressable onPress={switchWorkspace} style={[styles.outlineButton, isCompact && styles.outlineButtonCompact]}><Text style={styles.outlineText}>Switch workspace</Text><Ionicons color={colors.forest} name="chevron-forward" size={20} /></Pressable>
-    </View>
-
-    <View style={[styles.accessCard, isCompact && styles.accessCardCompact, shadow]}>
-      <View style={styles.accessIcon}><Ionicons color={colors.forest} name="shield-checkmark-outline" size={22} /></View>
-      <View style={styles.accessCopy}><Text style={styles.accessTitle}>Current role</Text><Text style={styles.roleValue}>{currentRole}</Text></View>
-      <Pressable onPress={switchCurrentRole} style={[styles.outlineButton, isCompact && styles.outlineButtonCompact]}><Text style={styles.outlineText}>Switch role</Text><Ionicons color={colors.forest} name="chevron-forward" size={20} /></Pressable>
-    </View>
-
     <View style={[styles.menu, shadow]}>
       {menuRows.map((row, index) => <Pressable key={row.label} onPress={() => openRow(row.label)} style={[styles.row, index < menuRows.length - 1 && styles.rowBorder]}>
         <View style={styles.menuIcon}><Ionicons color={colors.forest} name={row.icon} size={20} /></View>
@@ -91,12 +65,6 @@ export default function ProfileScreen() {
         <Ionicons color="#667085" name="chevron-forward" size={19} />
       </Pressable>)}
     </View>
-
-    <Pressable onPress={() => Alert.alert('Trusted workspace access', 'Your data and access are protected with enterprise-grade security.')} style={[styles.trustCard, isCompact && styles.trustCardCompact, shadow]}>
-      <View style={styles.trustIcon}><Ionicons color={colors.forest} name="shield-checkmark-outline" size={26} /></View>
-      <View style={styles.trustCopy}><Text style={styles.trustTitle}>Trusted workspace access</Text><Text style={styles.trustText}>Your data and access are protected with enterprise-grade security.</Text></View>
-      {!isCompact && <View style={styles.trustBadge}><Ionicons color={colors.surface} name="checkmark" size={26} /></View>}
-    </Pressable>
 
     <Pressable onPress={() => Alert.alert('Sign out of HostIn?', "You'll need to sign in again to manage City Complex.", [{ text: 'Cancel', style: 'cancel' }, { text: 'Sign out', style: 'destructive', onPress: () => void signOut() }])} style={styles.logout}>
       <Ionicons color={colors.danger} name="log-out-outline" size={21} />

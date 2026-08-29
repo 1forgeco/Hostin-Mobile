@@ -3,22 +3,27 @@ import { useMemo, useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { colors, radius, shadow } from '@/theme';
+import type { AvailableRole, Session } from '@/types';
 
-const fallbackProperties = ['City Complex', 'Lakeview Hostel', 'Green Residency'];
-
-export function OwnerPropertySwitcher({ workspace }: { workspace?: string }) {
-  const properties = useMemo(() => {
-    const current = workspace || fallbackProperties[0];
-    return [current, ...fallbackProperties.filter((item) => item.toLowerCase() !== current.toLowerCase())];
-  }, [workspace]);
-  const [selected, setSelected] = useState(properties[0]);
+export function OwnerPropertySwitcher({ onSwitch, session }: { onSwitch: (role: AvailableRole) => void | Promise<void>; session: Session }) {
   const [open, setOpen] = useState(false);
+  const ownerWorkspaces = useMemo(() => {
+    const current: AvailableRole = { accountSlug: session.accountSlug, destination: '', orgId: session.orgId, role: 'owner', workspace: session.workspace };
+    const seen = new Set<string>();
+    return [current, ...session.availableRoles.filter((item) => item.role === 'owner')].filter((item) => {
+      const key = `${item.orgId}-${item.accountSlug}-${item.workspace}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [session.accountSlug, session.availableRoles, session.orgId, session.workspace]);
+  const canSwitch = ownerWorkspaces.length > 1;
 
   return <>
     <View style={styles.kickerRow}>
-      <Pressable accessibilityRole="button" onPress={() => setOpen(true)} style={styles.propertyButton}>
-        <Text numberOfLines={1} style={styles.propertyText}>{selected.toUpperCase()}</Text>
-        <Ionicons color={colors.forest} name="chevron-down" size={13} />
+      <Pressable accessibilityRole="button" disabled={!canSwitch} onPress={() => setOpen(true)} style={({ pressed }) => [styles.propertyButton, pressed && styles.pressed]}>
+        <Text numberOfLines={1} style={styles.propertyText}>{session.workspace.toUpperCase()}</Text>
+        {canSwitch && <Ionicons color={colors.forest} name="chevron-down" size={13} />}
       </Pressable>
       <Text style={styles.separator}>·</Text>
       <Text style={styles.roleText}>OWNER</Text>
@@ -28,12 +33,12 @@ export function OwnerPropertySwitcher({ workspace }: { workspace?: string }) {
         <Pressable style={[styles.sheet, shadow]}>
           <View style={styles.handle} />
           <Text style={styles.sheetTitle}>Switch property</Text>
-          <Text style={styles.sheetSubtitle}>Choose the owner workspace view.</Text>
-          {properties.map((property) => {
-            const active = property === selected;
-            return <Pressable key={property} onPress={() => { setSelected(property); setOpen(false); }} style={[styles.option, active && styles.optionActive]}>
+          <Text style={styles.sheetSubtitle}>Choose one of your owner workspaces.</Text>
+          {ownerWorkspaces.map((property) => {
+            const active = property.orgId === session.orgId && property.accountSlug === session.accountSlug;
+            return <Pressable key={`${property.orgId}-${property.accountSlug}`} onPress={() => { setOpen(false); if (!active) void onSwitch(property); }} style={[styles.option, active && styles.optionActive]}>
               <View style={styles.optionIcon}><Ionicons color={colors.forest} name="business-outline" size={19} /></View>
-              <Text style={styles.optionText}>{property}</Text>
+              <Text style={styles.optionText}>{property.workspace}</Text>
               {active && <Ionicons color={colors.forest} name="checkmark-circle" size={21} />}
             </Pressable>;
           })}
@@ -58,4 +63,5 @@ const styles = StyleSheet.create({
   optionActive: { backgroundColor: colors.forestSoft, borderColor: '#B9EADF' },
   optionIcon: { alignItems: 'center', backgroundColor: colors.surface, borderRadius: 10, height: 36, justifyContent: 'center', width: 36 },
   optionText: { color: colors.ink, flex: 1, fontSize: 14, fontWeight: '800' },
+  pressed: { opacity: 0.7 },
 });
