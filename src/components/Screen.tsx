@@ -10,4 +10,4 @@ export function Screen({ children, contentStyle, floating, refreshControl }: Pro
   </SafeAreaView>;
 }
 
-const styles = StyleSheet.create({ safe: { backgroundColor: colors.canvas, flex: 1 }, content: { paddingBottom: 120, paddingHorizontal: 20 } });
+const styles = StyleSheet.create({ safe: { backgroundColor: colors.canvas, flex: 1 }, content: { paddingBottom: 120, paddingHorizontal: 20, paddingTop: 20 } });

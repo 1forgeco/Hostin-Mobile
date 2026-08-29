@@ -169,7 +169,7 @@ const styles = StyleSheet.create({
   pressed: { opacity: 0.74 },
   drawerRoot: { flex: 1 },
   drawerBackdrop: { backgroundColor: 'rgba(16, 24, 40, 0.32)', bottom: 0, left: 0, position: 'absolute', right: 0, top: 0 },
-  drawer: { backgroundColor: colors.surface, borderBottomRightRadius: 22, borderTopRightRadius: 22, height: '100%', paddingHorizontal: 16, paddingTop: 10 },
+  drawer: { backgroundColor: colors.surface, borderBottomRightRadius: 22, borderTopRightRadius: 22, height: '100%', paddingHorizontal: 16, paddingTop: 34 },
   drawerHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', paddingBottom: 14 },
   drawerEyebrow: { color: colors.forest, fontSize: 10, fontWeight: '900', letterSpacing: 1.4, textTransform: 'uppercase' },
   drawerTitle: { color: colors.ink, fontSize: 20, fontWeight: '900', marginTop: 4, maxWidth: 210 },
