@@ -21,9 +21,9 @@ export function OwnerPropertySwitcher({ onSwitch, session }: { onSwitch: (role: 
 
   return <>
     <View style={styles.kickerRow}>
-      <Pressable accessibilityRole="button" disabled={!canSwitch} onPress={() => setOpen(true)} style={({ pressed }) => [styles.propertyButton, pressed && styles.pressed]}>
+      <Pressable accessibilityRole="button" onPress={() => setOpen(true)} style={({ pressed }) => [styles.propertyButton, pressed && styles.pressed]}>
         <Text numberOfLines={1} style={styles.propertyText}>{session.workspace.toUpperCase()}</Text>
-        {canSwitch && <Ionicons color={colors.forest} name="chevron-down" size={13} />}
+        <Ionicons color={colors.forest} name="chevron-down" size={13} />
       </Pressable>
       <Text style={styles.separator}>·</Text>
       <Text style={styles.roleText}>OWNER</Text>
@@ -33,13 +33,13 @@ export function OwnerPropertySwitcher({ onSwitch, session }: { onSwitch: (role: 
         <Pressable style={[styles.sheet, shadow]}>
           <View style={styles.handle} />
           <Text style={styles.sheetTitle}>Switch property</Text>
-          <Text style={styles.sheetSubtitle}>Choose one of your owner workspaces.</Text>
+          <Text style={styles.sheetSubtitle}>{canSwitch ? 'Choose one of your owner workspaces.' : 'Only one owner workspace is assigned to this account.'}</Text>
           {ownerWorkspaces.map((property) => {
             const active = property.orgId === session.orgId && property.accountSlug === session.accountSlug;
             return <Pressable key={`${property.orgId}-${property.accountSlug}`} onPress={() => { setOpen(false); if (!active) void onSwitch(property); }} style={[styles.option, active && styles.optionActive]}>
               <View style={styles.optionIcon}><Ionicons color={colors.forest} name="business-outline" size={19} /></View>
               <Text style={styles.optionText}>{property.workspace}</Text>
-              {active && <Ionicons color={colors.forest} name="checkmark-circle" size={21} />}
+              {active ? <Ionicons color={colors.forest} name="checkmark-circle" size={21} /> : <Text style={styles.switchText}>Switch</Text>}
             </Pressable>;
           })}
         </Pressable>
@@ -63,5 +63,6 @@ const styles = StyleSheet.create({
   optionActive: { backgroundColor: colors.forestSoft, borderColor: '#B9EADF' },
   optionIcon: { alignItems: 'center', backgroundColor: colors.surface, borderRadius: 10, height: 36, justifyContent: 'center', width: 36 },
   optionText: { color: colors.ink, flex: 1, fontSize: 14, fontWeight: '800' },
+  switchText: { color: colors.forest, fontSize: 12, fontWeight: '900' },
   pressed: { opacity: 0.7 },
 });
