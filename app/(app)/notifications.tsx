@@ -8,9 +8,9 @@ import { Screen } from '@/components/Screen';
 import { loadNotifications, markNotificationRead } from '@/services/notifications';
 import type { HostinNotification } from '@/services/notifications';
 import { enablePushNotifications } from '@/services/push';
-import { colors, radius, shadow } from '@/theme';
+import { colors, radius } from '@/theme';
 
-const chips = ['All', 'Urgent', 'Payments', 'Residents', 'Operations'];
+const chips = ['All', 'New', 'Payments', 'Activity'];
 
 function notificationIcon(type?: string): keyof typeof Ionicons.glyphMap {
   if (type?.includes('gate')) return 'exit-outline';
@@ -29,15 +29,6 @@ function moduleFor(type?: string) {
   if (type?.includes('payment') || type?.includes('due')) return 'finance';
   if (type?.includes('visitor')) return 'visitors';
   return 'overview';
-}
-
-function actionFor(type?: string) {
-  if (type?.includes('gate')) return 'Review';
-  if (type?.includes('complaint')) return 'View details';
-  if (type?.includes('document')) return 'View';
-  if (type?.includes('visitor')) return 'Verify';
-  if (type?.includes('maintenance')) return 'Remind';
-  return 'View';
 }
 
 export default function NotificationsScreen() {
@@ -65,10 +56,9 @@ export default function NotificationsScreen() {
   const isCompact = width < 390;
   const visibleAlerts = useMemo(() => {
     if (activeChip === 'All') return alerts;
-    if (activeChip === 'Urgent') return alerts.filter((alert) => alert.unread || alert.type?.includes('gate') || alert.type?.includes('complaint'));
+    if (activeChip === 'New') return alerts.filter((alert) => alert.unread);
     if (activeChip === 'Payments') return alerts.filter((alert) => alert.type?.includes('payment') || alert.type?.includes('due'));
-    if (activeChip === 'Residents') return alerts.filter((alert) => alert.type?.includes('document') || alert.type?.includes('visitor'));
-    return alerts.filter((alert) => alert.type?.includes('gate') || alert.type?.includes('complaint') || alert.type?.includes('announcement'));
+    return alerts.filter((alert) => !alert.type?.includes('payment') && !alert.type?.includes('due'));
   }, [activeChip, alerts]);
 
   const read = async (alert: HostinNotification) => {
@@ -92,83 +82,67 @@ export default function NotificationsScreen() {
   return <Screen contentStyle={[styles.content, isCompact && styles.contentCompact]} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void refresh(true)} tintColor={colors.forest} />}>
     <View style={styles.heading}>
       <View style={styles.headingCopy}>
-        <Text style={[styles.eyebrow, isCompact && styles.eyebrowCompact]}>LIVE ACTIVITY</Text>
         <Text style={[styles.title, isCompact && styles.titleCompact]}>Alerts</Text>
-        <Text style={[styles.subtitle, isCompact && styles.subtitleCompact]}>Priority updates from your property and enabled modules.</Text>
       </View>
-      {unreadCount > 0 && <Pressable onPress={() => setActiveChip('Urgent')} style={styles.count}><Text style={styles.countText}>{unreadCount} NEW</Text></Pressable>}
+      {unreadCount > 0 && <Pressable onPress={() => setActiveChip('New')} style={styles.count}><Text style={styles.countText}>{unreadCount} NEW</Text></Pressable>}
     </View>
 
     {Platform.OS !== 'web' && <Pressable disabled={enablingPush} onPress={() => void enablePush()} style={[styles.pushCard, isCompact && styles.pushCardCompact]}>
-      <View style={styles.pushIcon}>{enablingPush ? <ActivityIndicator color={colors.forest} size="small" /> : <Ionicons color={colors.forest} name="notifications-outline" size={29} />}</View>
-      <View style={styles.pushCopy}><Text style={styles.pushTitle}>Enable device alerts</Text><Text style={styles.pushText}>Get real-time updates on this device.</Text></View>
-      <Ionicons color={colors.forest} name="chevron-forward" size={26} />
+      <View style={styles.pushIcon}>{enablingPush ? <ActivityIndicator color={colors.forest} size="small" /> : <Ionicons color={colors.forest} name="notifications-outline" size={20} />}</View>
+      <Text style={styles.pushTitle}>Enable device alerts</Text>
+      <Ionicons color={colors.forest} name="chevron-forward" size={20} />
     </Pressable>}
 
     <ScrollView horizontal contentContainerStyle={styles.chips} showsHorizontalScrollIndicator={false}>
       {chips.map((chip) => <Pressable key={chip} onPress={() => setActiveChip(chip)} style={[styles.chip, activeChip === chip && styles.chipActive]}>
         <Text style={[styles.chipText, activeChip === chip && styles.chipTextActive]}>{chip}</Text>
-        {chip === 'Urgent' && <View style={styles.urgentDot} />}
+        {chip === 'New' && unreadCount > 0 && <View style={styles.urgentDot} />}
       </Pressable>)}
     </ScrollView>
 
     {loading ? <ActivityIndicator color={colors.forest} style={styles.loader} /> : error ? <View style={styles.empty}><Ionicons name="cloud-offline-outline" color={colors.danger} size={30} /><Text style={styles.emptyTitle}>Alerts unavailable</Text><Text style={styles.emptyText}>{error}</Text><Pressable onPress={() => void refresh()}><Text style={styles.retry}>Try again</Text></Pressable></View> : visibleAlerts.length ? <View style={styles.list}>
-      {visibleAlerts.map((alert) => <Pressable key={alert.id} onPress={() => void read(alert)} style={({ pressed }) => [styles.card, isCompact && styles.cardCompact, shadow, pressed && styles.pressed]}>
-        <View style={[styles.priorityDot, { backgroundColor: alert.unread ? '#EF3E46' : colors.forest }]} />
-        <View style={[styles.cardIcon, isCompact && styles.cardIconCompact]}><Ionicons color={colors.forest} name={notificationIcon(alert.type)} size={isCompact ? 24 : 30} /></View>
+      {visibleAlerts.map((alert) => <Pressable key={alert.id} onPress={() => void read(alert)} style={({ pressed }) => [styles.card, alert.unread && styles.cardUnread, pressed && styles.pressed]}>
+        <View style={[styles.cardIcon, isCompact && styles.cardIconCompact]}><Ionicons color={colors.forest} name={notificationIcon(alert.type)} size={isCompact ? 20 : 22} /></View>
         <View style={styles.cardCopy}>
           <View style={styles.cardTop}><Text numberOfLines={1} style={styles.cardTitle}>{alert.title}</Text><Text style={styles.time}>{alert.createdAt} ago</Text></View>
           <Text numberOfLines={1} style={styles.body}>{alert.body}</Text>
-          <View style={styles.cardFooter}><View style={styles.moduleTag}><Ionicons color={colors.forest} name={notificationIcon(alert.type)} size={13} /><Text style={styles.moduleTagText}>{moduleFor(alert.type).replace('-', ' ')}</Text></View><View style={styles.actionPill}><Text style={styles.actionText}>{actionFor(alert.type)}</Text></View></View>
         </View>
-        {alert.unread && <View style={styles.unreadDot} />}
+        {alert.unread ? <View style={styles.unreadDot} /> : <Ionicons color="#98A2B3" name="chevron-forward" size={16} />}
       </Pressable>)}
     </View> : <View style={styles.empty}><Ionicons name="notifications-off-outline" color={colors.muted} size={31} /><Text style={styles.emptyTitle}>Nothing urgent right now</Text><Text style={styles.emptyText}>New property activity will appear here.</Text></View>}
   </Screen>;
 }
 
 const styles = StyleSheet.create({
-  content: { paddingBottom: 102, paddingHorizontal: 18 },
+  content: { paddingBottom: 132, paddingHorizontal: 18 },
   contentCompact: { paddingHorizontal: 14 },
-  heading: { alignItems: 'flex-start', flexDirection: 'row', justifyContent: 'space-between', paddingTop: 18 },
+  heading: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', paddingTop: 8 },
   headingCopy: { flex: 1, paddingRight: 14 },
-  eyebrow: { color: colors.forest, fontSize: 10, fontWeight: '900', letterSpacing: 2.2 },
-  eyebrowCompact: { fontSize: 9, letterSpacing: 1.7 },
-  title: { color: colors.ink, fontSize: 34, fontWeight: '900', letterSpacing: 0, marginTop: 12 },
-  titleCompact: { fontSize: 30 },
-  subtitle: { color: colors.muted, fontSize: 14, fontWeight: '500', lineHeight: 21, marginTop: 6 },
-  subtitleCompact: { fontSize: 12, lineHeight: 18 },
-  count: { backgroundColor: colors.forestSoft, borderRadius: radius.pill, marginTop: 28, paddingHorizontal: 13, paddingVertical: 8 },
+  title: { color: colors.ink, fontSize: 28, fontWeight: '900', letterSpacing: 0 },
+  titleCompact: { fontSize: 25 },
+  count: { backgroundColor: colors.forestSoft, borderRadius: radius.pill, paddingHorizontal: 12, paddingVertical: 7 },
   countText: { color: colors.forest, fontSize: 11, fontWeight: '900' },
-  pushCard: { alignItems: 'center', backgroundColor: '#F0FFFC', borderColor: '#CDEFE8', borderRadius: 16, borderWidth: 1, flexDirection: 'row', gap: 12, marginTop: 22, minHeight: 76, paddingHorizontal: 14 },
+  pushCard: { alignItems: 'center', backgroundColor: '#F0FFFC', borderColor: '#CDEFE8', borderRadius: 14, borderWidth: 1, flexDirection: 'row', gap: 10, marginTop: 16, minHeight: 52, paddingHorizontal: 12 },
   pushCardCompact: { gap: 10, paddingHorizontal: 12 },
-  pushIcon: { alignItems: 'center', backgroundColor: colors.forestSoft, borderRadius: 13, height: 48, justifyContent: 'center', width: 48 },
-  pushCopy: { flex: 1 },
-  pushTitle: { color: colors.forest, fontSize: 14, fontWeight: '900' },
-  pushText: { color: colors.muted, fontSize: 12, fontWeight: '500', marginTop: 4 },
-  chips: { gap: 9, paddingRight: 16 },
-  chip: { alignItems: 'center', borderColor: '#E1E5EC', borderRadius: 18, borderWidth: 1, flexDirection: 'row', gap: 7, height: 38, justifyContent: 'center', marginTop: 18, paddingHorizontal: 14 },
-  chipActive: { backgroundColor: colors.forest, borderColor: colors.forest, ...shadow },
-  chipText: { color: colors.ink, fontSize: 12, fontWeight: '900' },
+  pushIcon: { alignItems: 'center', backgroundColor: colors.forestSoft, borderRadius: 10, height: 34, justifyContent: 'center', width: 34 },
+  pushTitle: { color: colors.forest, flex: 1, fontSize: 13, fontWeight: '900' },
+  chips: { gap: 8, paddingRight: 16 },
+  chip: { alignItems: 'center', borderColor: '#E1E5EC', borderRadius: 16, borderWidth: 1, flexDirection: 'row', gap: 6, height: 33, justifyContent: 'center', marginTop: 14, paddingHorizontal: 12 },
+  chipActive: { backgroundColor: colors.forest, borderColor: colors.forest },
+  chipText: { color: colors.ink, fontSize: 11, fontWeight: '900' },
   chipTextActive: { color: colors.surface },
-  urgentDot: { backgroundColor: '#EF3E46', borderRadius: 4, height: 8, width: 8 },
-  list: { gap: 9, marginTop: 24 },
-  card: { alignItems: 'center', backgroundColor: colors.surface, borderColor: '#EEF1F4', borderRadius: 15, borderWidth: 1, flexDirection: 'row', gap: 12, minHeight: 100, paddingHorizontal: 14, paddingVertical: 14 },
-  cardCompact: { alignItems: 'flex-start', gap: 10, minHeight: 96, paddingHorizontal: 12, paddingVertical: 13 },
-  priorityDot: { borderRadius: 4, height: 8, marginLeft: -4, width: 8 },
-  cardIcon: { alignItems: 'center', backgroundColor: colors.forestSoft, borderRadius: 13, height: 48, justifyContent: 'center', width: 48 },
-  cardIconCompact: { borderRadius: 11, height: 42, width: 42 },
+  urgentDot: { backgroundColor: '#EF3E46', borderRadius: 3, height: 6, width: 6 },
+  list: { gap: 8, marginTop: 18 },
+  card: { alignItems: 'center', backgroundColor: colors.surface, borderColor: '#EEF1F4', borderRadius: 13, borderWidth: 1, flexDirection: 'row', gap: 10, minHeight: 70, paddingHorizontal: 12, paddingVertical: 10 },
+  cardUnread: { borderColor: '#D7F3EC' },
+  cardIcon: { alignItems: 'center', backgroundColor: colors.forestSoft, borderRadius: 11, height: 40, justifyContent: 'center', width: 40 },
+  cardIconCompact: { borderRadius: 10, height: 38, width: 38 },
   cardCopy: { flex: 1, minWidth: 0 },
   cardTop: { alignItems: 'center', flexDirection: 'row', gap: 10 },
-  cardTitle: { color: colors.ink, flex: 1, fontSize: 15, fontWeight: '900' },
+  cardTitle: { color: colors.ink, flex: 1, fontSize: 13, fontWeight: '900' },
   time: { color: colors.muted, fontSize: 10, fontWeight: '700' },
-  body: { color: colors.muted, fontSize: 12, fontWeight: '500', marginTop: 5 },
-  cardFooter: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'space-between', marginTop: 9 },
-  moduleTag: { alignItems: 'center', flexDirection: 'row', gap: 6 },
-  moduleTagText: { color: colors.forest, fontSize: 10, fontWeight: '900', textTransform: 'capitalize' },
-  actionPill: { alignItems: 'center', backgroundColor: colors.forestSoft, borderRadius: radius.pill, justifyContent: 'center', minHeight: 31, paddingHorizontal: 12 },
-  actionText: { color: colors.forest, fontSize: 11, fontWeight: '900' },
-  unreadDot: { backgroundColor: colors.forest, borderRadius: 4, height: 8, position: 'absolute', right: 17, top: 21, width: 8 },
+  body: { color: colors.muted, fontSize: 11, fontWeight: '600', marginTop: 4 },
+  unreadDot: { backgroundColor: colors.forest, borderRadius: 4, height: 8, width: 8 },
   loader: { marginTop: 60 },
   empty: { alignItems: 'center', marginTop: 60, paddingHorizontal: 20 },
   emptyTitle: { color: colors.ink, fontSize: 16, fontWeight: '900', marginTop: 11 },
