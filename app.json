@@ -29,6 +29,7 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
+      "./plugins/with-xcode-space-path-fix",
       "expo-router",
       "expo-secure-store",
       [

@@ -20,6 +20,10 @@ function record(value: unknown): Record<string, unknown> { return value && typeo
 function number(value: unknown) { const parsed = Number(value ?? 0); return Number.isFinite(parsed) ? parsed : 0; }
 function money(value: unknown) { return `₹${number(value).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`; }
 function statusCount(items: Record<string, unknown>[], values: string[]) { return items.filter((item) => values.includes(String(item.status ?? '').toLowerCase())).length; }
+async function optionalRequest<T>(session: Session, path: string, fallback: T): Promise<T> {
+  try { return await authenticatedRequest<T>(session, path); }
+  catch { return fallback; }
+}
 
 export async function loadDashboard(session: Session): Promise<DashboardData> {
   if (isPreviewMode) return { ...previewData[session.user.role], preview: true };
@@ -49,11 +53,11 @@ export async function loadDashboard(session: Session): Promise<DashboardData> {
     return { preview: false, headline: 'Gate operations', metrics: [[String(statusCount(passes, ['pending'])), 'Passes pending'], [String(visitors.length), 'Visitors'], [String(statusCount(passes, ['checked_out', 'out'])), 'Outside now']], attention: [['Gate passes', 'Review movement queue', 'exit-outline', 'gate'], ['Visitors', 'Manage arrivals', 'id-card-outline', 'visitors'], ['Contacts', 'Emergency directory', 'call-outline', 'staff']] };
   }
   if (role === 'staff') {
-    const [menuData, communityData] = await Promise.all([authenticatedRequest<Record<string, unknown>>(session, '/mess-menus'), authenticatedRequest<Record<string, unknown>>(session, '/community/lost-found?limit=50')]);
+    const [menuData, communityData] = await Promise.all([optionalRequest<Record<string, unknown>>(session, '/mess-menus', {}), authenticatedRequest<Record<string, unknown>>(session, '/community/lost-found?limit=50')]);
     const menus = array(menuData.menus ?? menuData.items); const posts = array(communityData.posts);
     return { preview: false, headline: 'Mess and resident support', metrics: [[String(menus.length), 'Menus'], [String(posts.length), 'Community posts'], ['Live', 'Workspace']], attention: [['Mess menu', 'Manage weekly meals', 'restaurant-outline', 'mess'], ['Community', `${posts.length} posts`, 'chatbubble-outline', 'community'], ['Contacts', 'Staff directory', 'call-outline', 'staff']] };
   }
-  const [dueData, passData, menuData] = await Promise.all([authenticatedRequest<Record<string, unknown>>(session, '/dues?limit=100'), authenticatedRequest<Record<string, unknown>>(session, '/gate-passes?limit=100'), authenticatedRequest<Record<string, unknown>>(session, '/mess-menus')]);
+  const [dueData, passData, menuData] = await Promise.all([authenticatedRequest<Record<string, unknown>>(session, '/dues?limit=100'), authenticatedRequest<Record<string, unknown>>(session, '/gate-passes?limit=100'), optionalRequest<Record<string, unknown>>(session, '/mess-menus', {})]);
   const dues = array(dueData.dues); const passes = array(passData.passes ?? passData.gatePasses); const pending = dues.filter((item) => !['paid', 'waived'].includes(String(item.status ?? '').toLowerCase())).reduce((sum, item) => sum + Math.max(0, number(item.amount) - number(item.amount_paid)), 0);
   return { preview: false, headline: `Your stay at ${session.workspace}`, metrics: [[money(pending), 'Amount due'], [String(statusCount(passes, ['pending', 'approved', 'checked_out', 'out'])), 'Active passes'], [String(array(menuData.menus ?? menuData.items).length), 'Menus']], attention: [['Dues', 'Review payments', 'wallet-outline', 'finance'], ['Gate pass', 'Track movement', 'exit-outline', 'gate'], ['Mess', 'Today’s meals', 'restaurant-outline', 'mess']] };
 }
