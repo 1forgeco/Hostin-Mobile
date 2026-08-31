@@ -1,10 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/auth';
+import { LogoMark } from '@/components/Logo';
 import { modulesForRole } from '@/modules';
 import { loadModule, ModuleRecord, runRecordAction, submitModuleAction } from '@/services/modules';
 import { pickDocument, pickImage } from '@/services/uploads';
@@ -119,6 +120,77 @@ function statusColor(status = '') {
   return colors.forest;
 }
 
+function text(value: unknown) {
+  return typeof value === 'string' || typeof value === 'number' ? String(value) : '';
+}
+
+function initials(value: string) {
+  return value.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'H';
+}
+
+function money(value: unknown) {
+  const amount = Number(value ?? 0);
+  if (!Number.isFinite(amount)) return text(value);
+  return `₹${amount.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+}
+
+function moduleCtaLabel(moduleId: string, fallback?: string) {
+  return ({
+    rooms: 'Add Room',
+    floors: 'Add Floor',
+    credentials: 'Add Team Member',
+    gate: 'New Pass',
+    finance: 'Add Charges',
+    community: 'Create Announcement',
+    staff: 'Add Contact',
+    documents: 'Add Document',
+    complaints: 'Raise / Assign',
+  } as Record<string, string>)[moduleId] ?? fallback ?? 'Add';
+}
+
+function moduleTabs(moduleId: string) {
+  return ({
+    rooms: ['All', 'Occupied', 'Vacant', 'Maintenance'],
+    credentials: ['All', 'Active', 'Pending'],
+    gate: ['Tenant Passes', 'Visitors'],
+    finance: ['All', 'Paid', 'Unpaid', 'Partial', 'Overdue'],
+    community: ['Announcements', 'Complaints', 'Lost / Found'],
+    staff: ['All', 'Security', 'Maintenance', 'Management'],
+  } as Record<string, string[]>)[moduleId] ?? ['All'];
+}
+
+function statusMatchesTab(record: ModuleRecord, tab: string) {
+  if (tab === 'All' || tab === 'Tenant Passes' || tab === 'Announcements') return true;
+  const haystack = `${record.status} ${record.subtitle} ${record.meta}`.toLowerCase();
+  if (tab === 'Vacant') return haystack.includes('vacant') || haystack.includes('available');
+  if (tab === 'Overdue') return haystack.includes('overdue') || haystack.includes('unpaid');
+  return haystack.includes(tab.toLowerCase());
+}
+
+function moduleStats(moduleId: string, records: ModuleRecord[]) {
+  const total = records.length;
+  const count = (term: string) => records.filter((record) => `${record.status} ${record.subtitle} ${record.meta}`.toLowerCase().includes(term)).length;
+  if (moduleId === 'rooms' || moduleId === 'floors') return [
+    ['Total', String(total), 'business-outline'],
+    ['Occupied', String(count('occupied')), 'people-outline'],
+    ['Partial', String(count('partial')), 'aperture-outline'],
+    ['Empty', String(count('vacant') + count('available')), 'ellipse-outline'],
+  ];
+  if (moduleId === 'finance') return [
+    ['Collected', money(records.filter((record) => `${record.status}`.toLowerCase().includes('paid')).reduce((sum, record) => sum + Number(record.raw?.amount_paid ?? record.raw?.amountPaid ?? 0), 0)), 'wallet-outline'],
+    ['Due', money(records.reduce((sum, record) => sum + Math.max(0, Number(record.raw?.amount ?? 0) - Number(record.raw?.amount_paid ?? record.raw?.amountPaid ?? 0)), 0)), 'receipt-outline'],
+    ['Overdue', String(count('unpaid') + count('overdue')), 'alert-circle-outline'],
+    ['Records', String(total), 'pie-chart-outline'],
+  ];
+  if (moduleId === 'gate') return [
+    ['Total Passes', String(total), 'calendar-outline'],
+    ['Completed', String(count('completed')), 'checkmark-circle-outline'],
+    ['Pending', String(count('pending')), 'time-outline'],
+    ['Active', String(count('approved') + count('out')), 'pulse-outline'],
+  ];
+  return [];
+}
+
 function payloadFrom(values: Record<string, string>, fields: Field[], defaults: Record<string, unknown> = {}) {
   const payload: Record<string, unknown> = { ...defaults };
   for (const [key, value] of Object.entries(values)) {
@@ -170,11 +242,13 @@ export default function ModuleDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { session } = useAuth();
+  const { width } = useWindowDimensions();
   const module = session ? modulesForRole(session.user.role).find((item) => item.id === id) : undefined;
   const action = id && session ? actions[`${id}:${session.user.role}`] ?? actions[id] : undefined;
   const canAct = !!(session && id && action && allowedActions[id]?.includes(session.user.role));
   const [records, setRecords] = useState<ModuleRecord[]>([]);
   const [query, setQuery] = useState('');
+  const [activeTab, setActiveTab] = useState('All');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [preview, setPreview] = useState(false);
@@ -197,8 +271,16 @@ export default function ModuleDetailScreen() {
     finally { setLoading(false); setRefreshing(false); }
   };
 
+  const tabs = useMemo(() => moduleTabs(id ?? ''), [id]);
+  const stats = useMemo(() => moduleStats(id ?? '', records), [id, records]);
+  const isCompact = width < 390;
+
   useEffect(() => { void refresh(); }, [id, session?.accessToken]);
-  const filtered = useMemo(() => records.filter((item) => `${item.title} ${item.subtitle} ${item.meta} ${item.status}`.toLowerCase().includes(query.toLowerCase())), [query, records]);
+  useEffect(() => { setActiveTab(tabs[0] ?? 'All'); }, [id, tabs]);
+  const filtered = useMemo(() => records.filter((item) => {
+    const searchMatch = `${item.title} ${item.subtitle} ${item.meta} ${item.status}`.toLowerCase().includes(query.toLowerCase());
+    return searchMatch && statusMatchesTab(item, activeTab);
+  }), [activeTab, query, records]);
 
   const submit = async () => {
     const selectedAction = activeAction ?? action;
@@ -249,21 +331,87 @@ export default function ModuleDetailScreen() {
 
   if (!module) return <SafeAreaView style={styles.safe}><View style={styles.center}><Text style={styles.title}>Module unavailable</Text><Text style={styles.subtitle}>This module is not enabled for your signed-in role.</Text><Pressable onPress={() => router.back()} style={styles.primary}><Text style={styles.primaryText}>Go back</Text></Pressable></View></SafeAreaView>;
 
+  const renderSkeleton = () => <View style={styles.skeletonWrap}>
+    <View style={styles.skeletonStats}>{Array.from({ length: 4 }).map((_, index) => <View key={index} style={styles.skeletonStat}><View style={styles.skeletonCircle} /><View style={styles.skeletonLineWide} /><View style={styles.skeletonLineShort} /></View>)}</View>
+    <View style={styles.skeletonRecords}>{Array.from({ length: 5 }).map((_, index) => <View key={index} style={styles.skeletonRecord}><View style={styles.skeletonCircle} /><View style={styles.skeletonCopy}><View style={styles.skeletonLineWide} /><View style={styles.skeletonLine} /></View><View style={styles.skeletonBadge} /></View>)}</View>
+  </View>;
+
+  const renderActions = (item: ModuleRecord) => session && id && actionsForRecord(id, session.user.role, item).length > 0 ? <View style={styles.recordActions}>{actionsForRecord(id, session.user.role, item).map((recordAction) => <Pressable disabled={!!actingId} key={recordAction.label} onPress={() => void runAction(item, recordAction)} style={[styles.recordAction, recordAction.destructive && styles.recordActionDanger]}>{actingId === `${item.id}:${recordAction.label}` ? <ActivityIndicator color={recordAction.destructive ? colors.danger : colors.forest} size="small" /> : <Text style={[styles.recordActionText, recordAction.destructive && styles.recordActionDangerText]}>{recordAction.label}</Text>}</Pressable>)}</View> : null;
+
+  const renderRecord = (item: ModuleRecord) => {
+    const raw = item.raw ?? {};
+    const status = item.status || text(raw.status);
+    const tone = statusColor(status);
+    if (id === 'rooms' || id === 'floors') {
+      return <View key={item.id} style={[styles.roomCard, { borderColor: `${tone}66` }]}>
+        <View style={styles.roomTop}><View><Text style={styles.roomNumber}>{item.title}</Text><Text numberOfLines={1} style={styles.roomTenant}>{item.subtitle || 'Vacant'}</Text></View>{!!status && <View style={[styles.statusDot, { borderColor: tone, backgroundColor: status.toLowerCase().includes('occupied') ? tone : 'transparent' }]} />}</View>
+        {!!item.meta && <Text numberOfLines={1} style={styles.roomMeta}>{item.meta}</Text>}
+        {renderActions(item)}
+      </View>;
+    }
+    if (id === 'credentials') {
+      return <View key={item.id} style={styles.accountCard}>
+        <View style={styles.accountTop}><View style={styles.avatar}><Text style={styles.avatarText}>{initials(item.title)}</Text></View><View style={styles.accountCopy}><Text numberOfLines={1} style={styles.cardTitle}>{item.title}</Text><Text numberOfLines={1} style={styles.cardSubtitle}>{item.subtitle}</Text></View>{!!status && <View style={[styles.badge, { backgroundColor: `${tone}14` }]}><Text style={[styles.badgeText, { color: tone }]}>{status}</Text></View>}</View>
+        <View style={styles.accountGrid}><View style={styles.accountField}><Text style={styles.fieldLabel}>Login ID</Text><Text numberOfLines={1} style={styles.fieldValue}>{text(raw.email) || item.meta || item.subtitle}</Text></View><View style={styles.accountField}><Text style={styles.fieldLabel}>Last active</Text><Text numberOfLines={1} style={styles.fieldValue}>{text(raw.last_login_at || raw.lastLoginAt) || 'Recently'}</Text></View></View>
+        {renderActions(item)}
+      </View>;
+    }
+    if (id === 'gate') {
+      return <View key={item.id} style={[styles.travelCard, { borderLeftColor: tone }]}>
+        <View style={styles.travelMain}><View style={styles.travelIcon}><Ionicons color={tone} name="airplane-outline" size={20} /></View><View style={styles.travelCopy}><Text numberOfLines={1} style={styles.cardTitle}>{item.title}</Text><Text numberOfLines={1} style={styles.cardSubtitle}>{item.subtitle}</Text></View>{!!status && <View style={[styles.badge, { backgroundColor: `${tone}14` }]}><Text style={[styles.badgeText, { color: tone }]}>{status}</Text></View>}</View>
+        <View style={styles.travelRoute}><Text numberOfLines={1} style={styles.routePoint}>{text(raw.destination) || item.meta || 'Destination'}</Text><View style={styles.routeLine}><View style={styles.routeDash} /><Ionicons color="#667085" name="airplane" size={15} /><View style={styles.routeDash} /></View><Text numberOfLines={1} style={styles.routePoint}>{text(raw.expected_return_time || raw.expectedReturnTime) || 'Return'}</Text></View>
+        {renderActions(item)}
+      </View>;
+    }
+    if (id === 'finance') {
+      const amount = money(raw.amount ?? item.meta);
+      const paid = money(raw.amount_paid ?? raw.amountPaid ?? 0);
+      const balance = money(Math.max(0, Number(raw.amount ?? 0) - Number(raw.amount_paid ?? raw.amountPaid ?? 0)));
+      return <View key={item.id} style={styles.paymentCard}>
+        <View style={styles.paymentTop}><View style={styles.avatar}><Text style={styles.avatarText}>{initials(item.title)}</Text></View><View style={styles.accountCopy}><Text numberOfLines={1} style={styles.cardTitle}>{item.title}</Text><Text numberOfLines={1} style={styles.cardSubtitle}>{item.subtitle}</Text></View>{!!status && <View style={[styles.badge, { backgroundColor: `${tone}14` }]}><Text style={[styles.badgeText, { color: tone }]}>{status}</Text></View>}</View>
+        <View style={styles.paymentGrid}><View><Text style={styles.fieldLabel}>Monthly Due</Text><Text style={styles.fieldValue}>{amount}</Text></View><View><Text style={styles.fieldLabel}>Paid</Text><Text style={styles.fieldValue}>{paid}</Text></View><View><Text style={styles.fieldLabel}>Balance</Text><Text style={[styles.fieldValue, { color: balance === '₹0' ? colors.success : colors.danger }]}>{balance}</Text></View></View>
+        {renderActions(item)}
+      </View>;
+    }
+    if (id === 'community') {
+      return <View key={item.id} style={styles.postCard}>
+        <View style={styles.accountTop}><View style={styles.avatar}><Text style={styles.avatarText}>{initials(item.title)}</Text></View><View style={styles.accountCopy}><Text numberOfLines={1} style={styles.cardTitle}>{item.title}</Text><Text numberOfLines={1} style={styles.cardSubtitle}>{item.meta || item.subtitle}</Text></View><Ionicons color={colors.muted} name="ellipsis-vertical" size={17} /></View>
+        {!!item.subtitle && <Text numberOfLines={3} style={styles.postText}>{item.subtitle}</Text>}
+        <View style={styles.postFooter}><Text style={styles.postMetric}>0 likes</Text><Text style={styles.postMetric}>0 comments</Text><Text style={styles.viewLink}>View</Text></View>
+        {renderActions(item)}
+      </View>;
+    }
+    if (id === 'staff') {
+      return <View key={item.id} style={styles.contactCard}>
+        <View style={styles.avatar}><Text style={styles.avatarText}>{initials(item.title)}</Text></View><View style={styles.accountCopy}><Text numberOfLines={1} style={styles.cardTitle}>{item.title}</Text><Text numberOfLines={1} style={styles.cardSubtitle}>{item.subtitle}</Text><Text numberOfLines={1} style={styles.contactPhone}>{item.meta}</Text></View><Pressable style={styles.callButton}><Ionicons color={colors.forest} name="call-outline" size={19} /><Text style={styles.callText}>Call</Text></Pressable>
+      </View>;
+    }
+    return <View key={item.id} style={styles.card}>
+      <View style={styles.cardIcon}><Ionicons name={module.icon as keyof typeof Ionicons.glyphMap} color={colors.forest} size={19} /></View>
+      <View style={styles.cardBody}><Text numberOfLines={1} style={styles.cardTitle}>{item.title}</Text>{!!item.subtitle && <Text numberOfLines={2} style={styles.cardSubtitle}>{item.subtitle}</Text>}<View style={styles.cardMeta}>{!!status && <View style={[styles.badge, { backgroundColor: `${tone}14` }]}><Text style={[styles.badgeText, { color: tone }]}>{status}</Text></View>}{!!item.meta && <Text numberOfLines={1} style={styles.meta}>{item.meta}</Text>}</View>{renderActions(item)}</View>
+    </View>;
+  };
+
   return <SafeAreaView edges={['top']} style={styles.safe}>
-    <View style={styles.header}>
-      <Pressable accessibilityLabel="Go back" onPress={() => router.back()} style={styles.iconButton}><Ionicons name="arrow-back" color={colors.ink} size={22} /></Pressable>
-      <View style={styles.heading}><Text numberOfLines={1} style={styles.headerTitle}>{module.title}</Text><Text numberOfLines={1} style={styles.headerSubtitle}>{session?.workspace}</Text></View>
-      {canAct ? <Pressable accessibilityLabel={action?.label} onPress={() => { setActiveAction(action); setFormOpen(true); }} style={styles.addButton}><Ionicons name="add" color="#fff" size={23} /></Pressable> : <View style={styles.buttonSpacer} />}
+    <View style={styles.topBar}>
+      <Pressable accessibilityLabel="Go back" onPress={() => router.back()} style={styles.backButton}><Ionicons name="chevron-back" color={colors.ink} size={20} /></Pressable>
+      <View style={styles.brandMini}><LogoMark size={30} /><Text style={styles.brandText}>hostin.</Text></View>
+      <View style={styles.topSpacer} />
+      <View style={styles.propertyPill}><Ionicons color={colors.ink} name="business-outline" size={15} /><Text numberOfLines={1} style={styles.propertyPillText}>{session?.workspace ?? 'Workspace'}</Text><Ionicons color={colors.ink} name="chevron-down" size={13} /></View>
+      <View style={styles.profileDot}><Text style={styles.profileDotText}>{initials(session?.workspace ?? 'CC')}</Text></View>
     </View>
-    <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void refresh(true)} tintColor={colors.forest} />}>
-      <Text style={styles.eyebrow}>ROLE-BASED WORKSPACE</Text><Text style={styles.title}>{module.title}</Text><Text style={styles.subtitle}>{module.description}</Text>
+    <ScrollView contentContainerStyle={[styles.content, isCompact && styles.contentCompact]} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void refresh(true)} tintColor={colors.forest} />}>
+      <View style={styles.titleRow}>
+        <View style={styles.titleIcon}><Ionicons color={colors.ink} name={module.icon as keyof typeof Ionicons.glyphMap} size={24} /></View>
+        <View style={styles.titleCopy}><Text style={[styles.title, isCompact && styles.titleCompact]}>{module.title}</Text><Text style={styles.subtitle}>{module.description}</Text></View>
+      </View>
+      {canAct && <Pressable accessibilityLabel={action?.label} onPress={() => { setActiveAction(action); setFormOpen(true); }} style={styles.inlineCta}><Ionicons name="add" color="#fff" size={18} /><Text style={styles.inlineCtaText}>{moduleCtaLabel(id ?? '', action?.label)}</Text></Pressable>}
       {preview && <View style={styles.preview}><Ionicons name="flask-outline" color={colors.warning} size={18} /><Text style={styles.previewText}>Preview data is active. Connect the existing HostIn API to use live records.</Text></View>}
-      <View style={styles.search}><Ionicons name="search" color={colors.muted} size={19} /><TextInput value={query} onChangeText={setQuery} placeholder="Search records" placeholderTextColor="#98A2B3" style={styles.searchInput} /></View>
+      {!loading && !!stats.length && <View style={styles.statsGrid}>{stats.map(([label, value, icon]) => <View key={label} style={styles.statCard}><View style={styles.statIcon}><Ionicons color={colors.forest} name={icon as keyof typeof Ionicons.glyphMap} size={18} /></View><Text adjustsFontSizeToFit numberOfLines={1} style={styles.statValue}>{value}</Text><Text numberOfLines={2} style={styles.statLabel}>{label}</Text></View>)}</View>}
+      {tabs.length > 1 && <ScrollView horizontal contentContainerStyle={styles.tabs} showsHorizontalScrollIndicator={false}>{tabs.map((tab) => <Pressable key={tab} onPress={() => setActiveTab(tab)} style={[styles.tab, activeTab === tab && styles.tabActive]}><Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>{tab}</Text></Pressable>)}</ScrollView>}
+      <View style={styles.search}><Ionicons name="search" color={colors.muted} size={18} /><TextInput value={query} onChangeText={setQuery} placeholder={`Search ${module.title.toLowerCase()}...`} placeholderTextColor="#98A2B3" style={styles.searchInput} />{!!query && <Pressable onPress={() => setQuery('')}><Ionicons name="close-circle" color={colors.muted} size={18} /></Pressable>}</View>
       {session && id && (extraActions[id] ?? []).some((tool) => !tool.roles || tool.roles.includes(session.user.role)) && <View style={styles.moduleTools}>{extraActions[id].filter((tool) => !tool.roles || tool.roles.includes(session.user.role)).map((tool) => <Pressable key={tool.label} onPress={() => { setActiveAction(tool); setFormOpen(true); }} style={styles.toolButton}><Ionicons name="build-outline" color={colors.forest} size={15} /><Text style={styles.toolText}>{tool.label}</Text></Pressable>)}</View>}
-      {loading ? <ActivityIndicator color={colors.forest} style={styles.loader} /> : error ? <View style={styles.empty}><Ionicons name="cloud-offline-outline" color={colors.danger} size={28} /><Text style={styles.emptyTitle}>Couldn’t load records</Text><Text style={styles.emptyText}>{error}</Text><Pressable onPress={() => void refresh()}><Text style={styles.retry}>Try again</Text></Pressable></View> : filtered.length ? filtered.map((item) => <View key={item.id} style={styles.card}>
-        <View style={styles.cardIcon}><Ionicons name={module.icon as keyof typeof Ionicons.glyphMap} color={colors.forest} size={21} /></View>
-        <View style={styles.cardBody}><Text style={styles.cardTitle}>{item.title}</Text>{!!item.subtitle && <Text style={styles.cardSubtitle}>{item.subtitle}</Text>}<View style={styles.cardMeta}>{!!item.status && <View style={[styles.badge, { backgroundColor: `${statusColor(item.status)}14` }]}><Text style={[styles.badgeText, { color: statusColor(item.status) }]}>{item.status}</Text></View>}{!!item.meta && <Text style={styles.meta}>{item.meta}</Text>}</View>{session && id && actionsForRecord(id, session.user.role, item).length > 0 && <View style={styles.recordActions}>{actionsForRecord(id, session.user.role, item).map((recordAction) => <Pressable disabled={!!actingId} key={recordAction.label} onPress={() => void runAction(item, recordAction)} style={[styles.recordAction, recordAction.destructive && styles.recordActionDanger]}>{actingId === `${item.id}:${recordAction.label}` ? <ActivityIndicator color={recordAction.destructive ? colors.danger : colors.forest} size="small" /> : <Text style={[styles.recordActionText, recordAction.destructive && styles.recordActionDangerText]}>{recordAction.label}</Text>}</Pressable>)}</View>}</View>
-      </View>) : <View style={styles.empty}><Ionicons name="file-tray-outline" color={colors.muted} size={30} /><Text style={styles.emptyTitle}>No records found</Text><Text style={styles.emptyText}>{query ? 'Try a different search.' : 'New records will appear here.'}</Text></View>}
+      {loading ? renderSkeleton() : error ? <View style={styles.empty}><Ionicons name="cloud-offline-outline" color={colors.danger} size={28} /><Text style={styles.emptyTitle}>Couldn’t load records</Text><Text style={styles.emptyText}>{error}</Text><Pressable onPress={() => void refresh()}><Text style={styles.retry}>Try again</Text></Pressable></View> : filtered.length ? <View style={[styles.records, (id === 'rooms' || id === 'floors') && styles.roomGrid]}>{filtered.map(renderRecord)}</View> : <View style={styles.empty}><Ionicons name="file-tray-outline" color={colors.muted} size={30} /><Text style={styles.emptyTitle}>No records found</Text><Text style={styles.emptyText}>{query ? 'Try a different search.' : 'New records will appear here.'}</Text></View>}
     </ScrollView>
     <Modal animationType="slide" transparent visible={formOpen} onRequestClose={() => setFormOpen(false)}>
       <View style={styles.modalBackdrop}><Pressable style={StyleSheet.absoluteFill} onPress={() => setFormOpen(false)} /><View style={styles.sheet}>
@@ -277,5 +425,127 @@ export default function ModuleDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { backgroundColor: colors.canvas, flex: 1 }, header: { alignItems: 'center', backgroundColor: colors.surface, borderBottomColor: colors.border, borderBottomWidth: 1, flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 11 }, heading: { flex: 1, marginHorizontal: 10 }, headerTitle: { color: colors.ink, fontSize: 16, fontWeight: '800' }, headerSubtitle: { color: colors.muted, fontSize: 11, marginTop: 2 }, iconButton: { alignItems: 'center', backgroundColor: colors.canvas, borderColor: colors.border, borderRadius: 13, borderWidth: 1, height: 42, justifyContent: 'center', width: 42 }, addButton: { alignItems: 'center', backgroundColor: colors.forest, borderRadius: 13, height: 42, justifyContent: 'center', width: 42 }, buttonSpacer: { width: 42 }, content: { padding: 20, paddingBottom: 50 }, eyebrow: { color: colors.forest, fontSize: 10, fontWeight: '800', letterSpacing: 1.5 }, title: { color: colors.ink, fontSize: 29, fontWeight: '900', letterSpacing: -1, marginTop: 7 }, subtitle: { color: colors.muted, fontSize: 13, lineHeight: 20, marginTop: 6 }, preview: { alignItems: 'center', backgroundColor: colors.coralSoft, borderColor: '#F5DEB3', borderRadius: radius.sm, borderWidth: 1, flexDirection: 'row', gap: 9, marginTop: 18, padding: 12 }, previewText: { color: '#8A5A13', flex: 1, fontSize: 11, lineHeight: 16 }, search: { alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: radius.sm, borderWidth: 1, flexDirection: 'row', gap: 9, marginBottom: 13, marginTop: 18, paddingHorizontal: 13 }, searchInput: { color: colors.ink, flex: 1, fontSize: 14, paddingVertical: 13 }, moduleTools: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 13 }, toolButton: { alignItems: 'center', backgroundColor: colors.forestSoft, borderRadius: radius.pill, flexDirection: 'row', gap: 6, minHeight: 34, paddingHorizontal: 12 }, toolText: { color: colors.forest, fontSize: 10, fontWeight: '800' }, loader: { marginTop: 50 }, card: { ...shadow, alignItems: 'flex-start', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: radius.md, borderWidth: 1, flexDirection: 'row', gap: 12, marginBottom: 10, padding: 15 }, cardIcon: { alignItems: 'center', backgroundColor: colors.forestSoft, borderRadius: 12, height: 42, justifyContent: 'center', width: 42 }, cardBody: { flex: 1 }, cardTitle: { color: colors.ink, fontSize: 14, fontWeight: '800' }, cardSubtitle: { color: colors.muted, fontSize: 12, lineHeight: 17, marginTop: 4 }, cardMeta: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 }, badge: { borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 4 }, badgeText: { fontSize: 9, fontWeight: '800', textTransform: 'uppercase' }, meta: { color: colors.muted, fontSize: 10 }, recordActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 11 }, recordAction: { alignItems: 'center', backgroundColor: colors.forestSoft, borderRadius: radius.pill, justifyContent: 'center', minHeight: 30, minWidth: 72, paddingHorizontal: 11 }, recordActionText: { color: colors.forest, fontSize: 10, fontWeight: '800' }, recordActionDanger: { backgroundColor: '#FFF1F0' }, recordActionDangerText: { color: colors.danger }, empty: { alignItems: 'center', marginTop: 48, paddingHorizontal: 20 }, emptyTitle: { color: colors.ink, fontSize: 15, fontWeight: '800', marginTop: 10 }, emptyText: { color: colors.muted, fontSize: 12, lineHeight: 18, marginTop: 5, textAlign: 'center' }, retry: { color: colors.forest, fontSize: 13, fontWeight: '800', marginTop: 12 }, center: { alignItems: 'center', flex: 1, justifyContent: 'center', padding: 30 }, primary: { alignItems: 'center', backgroundColor: colors.forest, borderRadius: radius.sm, justifyContent: 'center', marginTop: 18, minHeight: 50, paddingHorizontal: 20 }, primaryText: { color: '#fff', fontSize: 14, fontWeight: '800' }, disabled: { opacity: 0.55 }, modalBackdrop: { backgroundColor: 'rgba(16,24,40,0.45)', flex: 1, justifyContent: 'flex-end' }, sheet: { backgroundColor: colors.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28, maxHeight: '88%', paddingBottom: 20 }, handle: { alignSelf: 'center', backgroundColor: '#D0D5DD', borderRadius: 3, height: 5, marginTop: 9, width: 42 }, sheetHeader: { alignItems: 'center', borderBottomColor: colors.border, borderBottomWidth: 1, flexDirection: 'row', justifyContent: 'space-between', padding: 18 }, sheetTitle: { color: colors.ink, fontSize: 20, fontWeight: '900' }, sheetSubtitle: { color: colors.muted, fontSize: 11, marginTop: 3 }, form: { gap: 14, padding: 18, paddingBottom: 35 }, label: { color: colors.ink, fontSize: 12, fontWeight: '700', marginBottom: 6 }, input: { backgroundColor: colors.canvas, borderColor: colors.border, borderRadius: radius.sm, borderWidth: 1, color: colors.ink, fontSize: 14, minHeight: 48, paddingHorizontal: 13, paddingVertical: 11 }, multiline: { minHeight: 92, textAlignVertical: 'top' }, pickerButton: { alignItems: 'center', backgroundColor: colors.canvas, borderColor: colors.border, borderRadius: radius.sm, borderWidth: 1, flexDirection: 'row', gap: 12, minHeight: 58, paddingHorizontal: 13 }, pickerCopy: { flex: 1 }, pickerTitle: { color: colors.ink, fontSize: 13, fontWeight: '800' }, pickerSubtitle: { color: colors.muted, fontSize: 10, marginTop: 3 },
+  safe: { backgroundColor: colors.canvas, flex: 1 },
+  topBar: { alignItems: 'center', backgroundColor: colors.surface, borderBottomColor: '#EEF1F4', borderBottomWidth: 1, flexDirection: 'row', gap: 8, minHeight: 58, paddingHorizontal: 12, paddingVertical: 8 },
+  backButton: { alignItems: 'center', backgroundColor: '#F8FAFB', borderColor: colors.border, borderRadius: 12, borderWidth: 1, height: 32, justifyContent: 'center', width: 32 },
+  brandMini: { alignItems: 'center', flexDirection: 'row', gap: 6 },
+  brandText: { color: colors.forest, fontSize: 17, fontWeight: '900' },
+  topSpacer: { flex: 1 },
+  propertyPill: { alignItems: 'center', borderColor: colors.border, borderRadius: radius.pill, borderWidth: 1, flexDirection: 'row', gap: 5, maxWidth: 150, minHeight: 34, paddingHorizontal: 10 },
+  propertyPillText: { color: colors.ink, flexShrink: 1, fontSize: 11, fontWeight: '900' },
+  profileDot: { alignItems: 'center', backgroundColor: colors.forest, borderRadius: 17, height: 34, justifyContent: 'center', width: 34 },
+  profileDotText: { color: colors.surface, fontSize: 12, fontWeight: '900' },
+  content: { padding: 14, paddingBottom: 116 },
+  contentCompact: { paddingHorizontal: 12 },
+  titleRow: { alignItems: 'flex-start', flexDirection: 'row', gap: 10, marginTop: 6 },
+  titleIcon: { alignItems: 'center', backgroundColor: colors.surface, borderColor: '#E7F4F1', borderRadius: 14, borderWidth: 1, height: 42, justifyContent: 'center', width: 42 },
+  titleCopy: { flex: 1, minWidth: 0 },
+  title: { color: colors.ink, fontSize: 23, fontWeight: '900', letterSpacing: 0 },
+  titleCompact: { fontSize: 21 },
+  subtitle: { color: colors.muted, fontSize: 12, fontWeight: '600', lineHeight: 17, marginTop: 3 },
+  inlineCta: { alignItems: 'center', alignSelf: 'flex-start', backgroundColor: colors.forest, borderRadius: 12, flexDirection: 'row', gap: 6, marginTop: 13, minHeight: 36, paddingHorizontal: 13 },
+  inlineCtaText: { color: colors.surface, fontSize: 12, fontWeight: '900' },
+  preview: { alignItems: 'center', backgroundColor: colors.coralSoft, borderColor: '#F5DEB3', borderRadius: 12, borderWidth: 1, flexDirection: 'row', gap: 8, marginTop: 12, padding: 10 },
+  previewText: { color: '#8A5A13', flex: 1, fontSize: 11, lineHeight: 16 },
+  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 16 },
+  statCard: { alignItems: 'flex-start', backgroundColor: colors.surface, borderColor: '#EEF1F4', borderRadius: 12, borderWidth: 1, flex: 1, minHeight: 76, minWidth: '22%', padding: 10, ...shadow },
+  statIcon: { alignItems: 'center', backgroundColor: colors.forestSoft, borderRadius: 12, height: 28, justifyContent: 'center', width: 28 },
+  statValue: { color: colors.ink, fontSize: 17, fontWeight: '900', marginTop: 7 },
+  statLabel: { color: colors.muted, fontSize: 9, fontWeight: '700', lineHeight: 12, marginTop: 1 },
+  tabs: { gap: 7, paddingRight: 8 },
+  tab: { alignItems: 'center', borderColor: colors.border, borderRadius: 12, borderWidth: 1, height: 34, justifyContent: 'center', marginTop: 15, paddingHorizontal: 13 },
+  tabActive: { backgroundColor: colors.forest, borderColor: colors.forest },
+  tabText: { color: colors.ink, fontSize: 11, fontWeight: '800' },
+  tabTextActive: { color: colors.surface },
+  search: { alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 13, borderWidth: 1, flexDirection: 'row', gap: 8, height: 40, marginTop: 12, paddingHorizontal: 12 },
+  searchInput: { color: colors.ink, flex: 1, fontSize: 12, fontWeight: '700', height: 38, padding: 0 },
+  moduleTools: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 10 },
+  toolButton: { alignItems: 'center', backgroundColor: colors.forestSoft, borderColor: '#D4F4EC', borderRadius: radius.pill, borderWidth: 1, flexDirection: 'row', gap: 5, minHeight: 28, paddingHorizontal: 10 },
+  toolText: { color: colors.forest, fontSize: 10, fontWeight: '900' },
+  loader: { marginTop: 50 },
+  skeletonWrap: { marginTop: 14 },
+  skeletonStats: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  skeletonStat: { backgroundColor: 'rgba(255,255,255,0.8)', borderColor: '#EEF1F4', borderRadius: 12, borderWidth: 1, flex: 1, minHeight: 76, minWidth: '22%', padding: 10 },
+  skeletonRecords: { gap: 9, marginTop: 12 },
+  skeletonRecord: { alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.86)', borderColor: '#EEF1F4', borderRadius: 13, borderWidth: 1, flexDirection: 'row', gap: 10, minHeight: 66, padding: 11, ...shadow },
+  skeletonCircle: { backgroundColor: '#E8EEFA', borderRadius: 16, height: 32, width: 32 },
+  skeletonCopy: { flex: 1, gap: 8 },
+  skeletonLineWide: { backgroundColor: '#E8EEFA', borderRadius: radius.pill, height: 10, width: '68%' },
+  skeletonLine: { backgroundColor: '#EEF2F8', borderRadius: radius.pill, height: 9, width: '88%' },
+  skeletonLineShort: { backgroundColor: '#EEF2F8', borderRadius: radius.pill, height: 9, marginTop: 8, width: '46%' },
+  skeletonBadge: { backgroundColor: '#EEF2F8', borderRadius: radius.pill, height: 22, width: 48 },
+  records: { gap: 9, marginTop: 12 },
+  roomGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  roomCard: { backgroundColor: '#FBFFFE', borderRadius: 11, borderWidth: 1, minHeight: 74, padding: 10, width: '48.5%' },
+  roomTop: { alignItems: 'flex-start', flexDirection: 'row', justifyContent: 'space-between', gap: 8 },
+  roomNumber: { color: colors.ink, fontSize: 16, fontWeight: '900' },
+  roomTenant: { color: colors.forest, fontSize: 10, fontWeight: '700', marginTop: 3, maxWidth: 118 },
+  roomMeta: { color: colors.muted, fontSize: 10, fontWeight: '700', marginTop: 8 },
+  statusDot: { borderRadius: 9, borderWidth: 2, height: 18, width: 18 },
+  card: { ...shadow, alignItems: 'flex-start', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 13, borderWidth: 1, flexDirection: 'row', gap: 10, padding: 11 },
+  cardIcon: { alignItems: 'center', backgroundColor: colors.forestSoft, borderRadius: 11, height: 34, justifyContent: 'center', width: 34 },
+  cardBody: { flex: 1, minWidth: 0 },
+  cardTitle: { color: colors.ink, fontSize: 13, fontWeight: '900' },
+  cardSubtitle: { color: colors.muted, fontSize: 11, fontWeight: '600', lineHeight: 16, marginTop: 2 },
+  cardMeta: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 8 },
+  badge: { borderRadius: radius.pill, paddingHorizontal: 9, paddingVertical: 5 },
+  badgeText: { fontSize: 10, fontWeight: '900', textTransform: 'capitalize' },
+  meta: { color: colors.muted, flexShrink: 1, fontSize: 10, fontWeight: '700' },
+  accountCard: { ...shadow, backgroundColor: colors.surface, borderColor: '#EEF1F4', borderRadius: 14, borderWidth: 1, padding: 12 },
+  accountTop: { alignItems: 'center', flexDirection: 'row', gap: 10 },
+  avatar: { alignItems: 'center', backgroundColor: colors.forestSoft, borderRadius: 20, height: 40, justifyContent: 'center', width: 40 },
+  avatarText: { color: colors.forest, fontSize: 14, fontWeight: '900' },
+  accountCopy: { flex: 1, minWidth: 0 },
+  accountGrid: { borderTopColor: '#EEF1F4', borderTopWidth: 1, flexDirection: 'row', gap: 12, marginTop: 11, paddingTop: 10 },
+  accountField: { flex: 1, minWidth: 0 },
+  fieldLabel: { color: colors.muted, fontSize: 9, fontWeight: '900', marginBottom: 5, textTransform: 'uppercase' },
+  fieldValue: { color: colors.ink, fontSize: 12, fontWeight: '800' },
+  travelCard: { ...shadow, backgroundColor: colors.surface, borderColor: '#EEF1F4', borderLeftWidth: 4, borderRadius: 14, borderWidth: 1, padding: 12 },
+  travelMain: { alignItems: 'center', flexDirection: 'row', gap: 10 },
+  travelIcon: { alignItems: 'center', backgroundColor: colors.forestSoft, borderRadius: 16, height: 38, justifyContent: 'center', width: 38 },
+  travelCopy: { flex: 1, minWidth: 0 },
+  travelRoute: { alignItems: 'center', borderTopColor: '#EEF1F4', borderTopWidth: 1, flexDirection: 'row', gap: 10, marginTop: 13, paddingTop: 12 },
+  routePoint: { color: colors.ink, flex: 1, fontSize: 11, fontWeight: '800' },
+  routeLine: { alignItems: 'center', flexDirection: 'row', gap: 4 },
+  routeDash: { backgroundColor: '#CBD5E1', height: 1, width: 22 },
+  paymentCard: { ...shadow, backgroundColor: colors.surface, borderColor: '#EEF1F4', borderRadius: 14, borderWidth: 1, padding: 12 },
+  paymentTop: { alignItems: 'center', flexDirection: 'row', gap: 10 },
+  paymentGrid: { borderTopColor: '#EEF1F4', borderTopWidth: 1, flexDirection: 'row', justifyContent: 'space-between', marginTop: 11, paddingTop: 10 },
+  postCard: { ...shadow, backgroundColor: colors.surface, borderColor: '#EEF1F4', borderRadius: 14, borderWidth: 1, padding: 12 },
+  postText: { color: colors.ink, fontSize: 12, fontWeight: '800', lineHeight: 18, marginTop: 10 },
+  postFooter: { alignItems: 'center', borderTopColor: '#EEF1F4', borderTopWidth: 1, flexDirection: 'row', gap: 18, marginTop: 13, paddingTop: 12 },
+  postMetric: { color: colors.muted, fontSize: 11, fontWeight: '800' },
+  viewLink: { color: colors.forest, fontSize: 12, fontWeight: '900', marginLeft: 'auto' },
+  contactCard: { ...shadow, alignItems: 'center', backgroundColor: colors.surface, borderColor: '#EEF1F4', borderRadius: 14, borderWidth: 1, flexDirection: 'row', gap: 10, padding: 12 },
+  contactPhone: { color: colors.muted, fontSize: 11, fontWeight: '700', marginTop: 6 },
+  callButton: { alignItems: 'center', borderColor: colors.border, borderRadius: 12, borderWidth: 1, gap: 3, height: 50, justifyContent: 'center', width: 54 },
+  callText: { color: colors.forest, fontSize: 11, fontWeight: '900' },
+  recordActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 12 },
+  recordAction: { alignItems: 'center', backgroundColor: colors.forestSoft, borderColor: '#D4F4EC', borderRadius: radius.pill, borderWidth: 1, justifyContent: 'center', minHeight: 30, minWidth: 76, paddingHorizontal: 12 },
+  recordActionText: { color: colors.forest, fontSize: 10, fontWeight: '900' },
+  recordActionDanger: { backgroundColor: '#FFF1F0', borderColor: '#FFE0DA' },
+  recordActionDangerText: { color: colors.danger },
+  empty: { alignItems: 'center', marginTop: 48, paddingHorizontal: 20 },
+  emptyTitle: { color: colors.ink, fontSize: 15, fontWeight: '900', marginTop: 10 },
+  emptyText: { color: colors.muted, fontSize: 12, lineHeight: 18, marginTop: 5, textAlign: 'center' },
+  retry: { color: colors.forest, fontSize: 13, fontWeight: '900', marginTop: 12 },
+  center: { alignItems: 'center', flex: 1, justifyContent: 'center', padding: 30 },
+  primary: { alignItems: 'center', backgroundColor: colors.forest, borderRadius: 13, justifyContent: 'center', marginTop: 18, minHeight: 48, paddingHorizontal: 20 },
+  primaryText: { color: '#fff', fontSize: 13, fontWeight: '900' },
+  disabled: { opacity: 0.55 },
+  modalBackdrop: { backgroundColor: 'rgba(16,24,40,0.45)', flex: 1, justifyContent: 'flex-end' },
+  sheet: { backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '88%', paddingBottom: 20 },
+  handle: { alignSelf: 'center', backgroundColor: '#D0D5DD', borderRadius: 3, height: 5, marginTop: 9, width: 42 },
+  sheetHeader: { alignItems: 'center', borderBottomColor: colors.border, borderBottomWidth: 1, flexDirection: 'row', justifyContent: 'space-between', padding: 16 },
+  sheetTitle: { color: colors.ink, fontSize: 18, fontWeight: '900' },
+  sheetSubtitle: { color: colors.muted, fontSize: 11, marginTop: 3 },
+  iconButton: { alignItems: 'center', backgroundColor: colors.canvas, borderColor: colors.border, borderRadius: 13, borderWidth: 1, height: 40, justifyContent: 'center', width: 40 },
+  form: { gap: 13, padding: 16, paddingBottom: 35 },
+  label: { color: colors.ink, fontSize: 11, fontWeight: '800', marginBottom: 6 },
+  input: { backgroundColor: colors.canvas, borderColor: colors.border, borderRadius: 13, borderWidth: 1, color: colors.ink, fontSize: 13, minHeight: 46, paddingHorizontal: 12, paddingVertical: 10 },
+  multiline: { minHeight: 88, textAlignVertical: 'top' },
+  pickerButton: { alignItems: 'center', backgroundColor: colors.canvas, borderColor: colors.border, borderRadius: 13, borderWidth: 1, flexDirection: 'row', gap: 12, minHeight: 56, paddingHorizontal: 13 },
+  pickerCopy: { flex: 1 },
+  pickerTitle: { color: colors.ink, fontSize: 13, fontWeight: '800' },
+  pickerSubtitle: { color: colors.muted, fontSize: 10, marginTop: 3 },
 });
