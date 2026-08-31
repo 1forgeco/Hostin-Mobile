@@ -34,10 +34,14 @@
     "typescript": "~6.0.3"
   },
   "scripts": {
-    "start": "expo start",
+    "start": "node scripts/hostin-backend.cjs start && expo start",
     "android": "expo run:android",
-    "ios": "expo run:ios",
+    "ios": "node scripts/hostin-backend.cjs start && expo run:ios",
     "web": "expo start --web",
+    "backend:start": "node scripts/hostin-backend.cjs start",
+    "backend:status": "node scripts/hostin-backend.cjs status",
+    "backend:logs": "node scripts/hostin-backend.cjs logs",
+    "backend:stop": "node scripts/hostin-backend.cjs stop",
     "postinstall": "node scripts/fix-expo-xcode-26.cjs",
     "test": "node --import tsx --test tests/*.test.ts",
     "typecheck": "tsc --noEmit",

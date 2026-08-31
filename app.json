@@ -12,6 +12,10 @@
       "bundleIdentifier": "com.hostin.mobile",
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "HostIn uses your photo library when you attach evidence to a complaint or community post.",
+        "NSLocalNetworkUsageDescription": "HostIn connects to your development Mac while you preview the app locally.",
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true
+        },
         "ITSAppUsesNonExemptEncryption": false
       }
     },

@@ -1,6 +1,14 @@
 import type { OrgRole, Session } from '@/types';
+import Constants from 'expo-constants';
+import { Platform } from 'react-native';
+import { apiConnectionMessage, resolveApiUrl } from './api-url';
 
-export const API_URL = process.env.EXPO_PUBLIC_API_URL?.trim().replace(/\/$/, '');
+export const API_URL = resolveApiUrl(
+  process.env.EXPO_PUBLIC_API_URL,
+  Platform.OS,
+  Constants.expoConfig?.hostUri ?? Constants.expoGoConfig?.debuggerHost,
+  __DEV__,
+);
 export const allowPreviewMode = process.env.EXPO_PUBLIC_ALLOW_PREVIEW !== 'false';
 export const isPreviewMode = !API_URL && allowPreviewMode;
 export const backendConfigError = !API_URL && !allowPreviewMode
@@ -41,11 +49,16 @@ export const demoAccounts: { role: OrgRole; label: string; email: string; detail
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!API_URL) throw new Error(backendConfigError || 'The Hostin API URL has not been configured.');
-  const response = await fetch(`${API_URL}${path}`, {
-    ...init,
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json', ...init?.headers },
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}${path}`, {
+      ...init,
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', ...init?.headers },
+    });
+  } catch (cause) {
+    throw new Error(apiConnectionMessage(API_URL), { cause });
+  }
   if (!response.ok) {
     const error = await response.json().catch(() => null);
     throw new ApiError(error?.message ?? error?.error ?? 'Something went wrong. Please try again.', response.status);

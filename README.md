@@ -15,6 +15,12 @@ For native development, use `npm run ios` or `npm run android` with the appropri
 
 Until the existing HostIn API is connected, the app runs in preview mode using the accounts from the web repository. Choose Owner, Warden, Guard, Mess Manager, Tenant, Parent, or 1Forge Platform on the login screen. City Complex roles use `city-complex@123`; Platform uses `PlatformAdminPassword123`.
 
+## Local backend and Xcode development
+
+Run `npm run backend:start` once before pressing Run in Xcode. The command downloads the official `1forgeco/HostIn` backend into the ignored `.hostin-backend` directory, starts PostgreSQL and the API with Docker, applies migrations, seeds the development accounts, and waits for `http://localhost:5001/ready`.
+
+`npm start` and `npm run ios` also start and verify the backend automatically. The mobile client keeps `localhost` for the iOS Simulator and web, maps it to `10.0.2.2` for the Android emulator, and uses Expo's development host when running on a physical device. Set an explicit HTTPS `EXPO_PUBLIC_API_URL` for preview and production builds.
+
 ## Connect the existing backend
 
 Copy `.env.example` to `.env` and set `EXPO_PUBLIC_API_URL` to the existing backend API root, including `/api`. The mobile adapter calls `POST /auth/resolve-login` and normalizes the existing HostIn session response for encrypted native storage.
